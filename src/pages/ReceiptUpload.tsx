@@ -398,13 +398,13 @@ const ReceiptUpload = () => {
               <div className="flex items-center gap-2">
                 <div className="flex rounded-lg border border-border overflow-hidden">
                   <button
-                    onClick={() => setTipMode("percent")}
+                    onClick={() => { setTipMode("percent"); setNoTipActive(false); }}
                     className={`px-3 py-1.5 text-sm font-medium transition-colors ${tipMode === "percent" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"}`}
                   >
                     %
                   </button>
                   <button
-                    onClick={() => setTipMode("flat")}
+                    onClick={() => { setTipMode("flat"); setNoTipActive(false); }}
                     className={`px-3 py-1.5 text-sm font-medium transition-colors ${tipMode === "flat" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"}`}
                   >
                     €
