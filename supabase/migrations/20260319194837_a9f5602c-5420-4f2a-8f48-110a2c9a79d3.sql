@@ -1,0 +1,1 @@
+ALTER TABLE public.item_claims ADD COLUMN shared_with jsonb NOT NULL DEFAULT '[]'::jsonb;
