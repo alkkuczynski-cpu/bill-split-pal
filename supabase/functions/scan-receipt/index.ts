@@ -44,7 +44,17 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are a receipt parser. Extract all line items from the receipt image. For each item, extract the name and price in euros. Return ONLY valid JSON using the extract_items tool.`,
+            content: `You are a receipt parser. Extract all line items from the receipt image.
+
+CRITICAL RULES FOR QUANTITY AND PRICE:
+- The "price" you return must be the UNIT price (price for ONE item), NOT the line total.
+- If a line shows "2x Guinness €11.80", that means 2 items at €5.90 each. Return quantity=2, price=5.90.
+- If a line shows "Burger €14.50", that means 1 item at €14.50. Return quantity=1, price=14.50.
+- Always verify: quantity × price = the line total shown on the receipt.
+- Cross-check that the sum of all (quantity × price) equals the receipt subtotal (before tip/tax).
+- If a line total doesn't divide evenly by quantity, return the line total as price with quantity=1 and set "mismatch" to true.
+
+Return ONLY valid JSON using the extract_items tool.`,
           },
           {
             role: "user",
@@ -53,9 +63,9 @@ serve(async (req) => {
                 type: "image_url",
                 image_url: { url: `data:${mimeType};base64,${cleanBase64}` },
               },
-              {
+               {
                 type: "text",
-                text: "Extract all line items and their prices from this receipt. Include quantities if shown. Use euro amounts.",
+                text: "Extract all line items and their prices from this receipt. For each item: if a quantity is shown (e.g. '2x'), divide the line total by the quantity to get the unit price. Use euro amounts. Verify that quantity × unit_price = line_total for every item.",
               },
             ],
           },
@@ -77,6 +87,7 @@ serve(async (req) => {
                         name: { type: "string", description: "Item name" },
                         price: { type: "number", description: "Price in euros" },
                         quantity: { type: "number", description: "Quantity, default 1" },
+                        mismatch: { type: "boolean", description: "True if quantity × price does not match line total on receipt" },
                       },
                       required: ["name", "price"],
                       additionalProperties: false,

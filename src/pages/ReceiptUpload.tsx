@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Trash2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -10,7 +10,24 @@ interface LineItem {
   name: string;
   price: number;
   quantity: number;
+  mismatch?: boolean;
+  color: string;
 }
+
+const ITEM_COLORS = [
+  "hsl(160, 60%, 40%)",  // primary green
+  "hsl(260, 60%, 55%)",  // night purple
+  "hsl(35, 90%, 55%)",   // accent orange
+  "hsl(200, 70%, 50%)",  // blue
+  "hsl(340, 65%, 50%)",  // pink
+  "hsl(45, 85%, 50%)",   // gold
+  "hsl(180, 55%, 42%)",  // teal
+  "hsl(15, 75%, 50%)",   // red-orange
+  "hsl(280, 50%, 60%)",  // lavender
+  "hsl(100, 50%, 42%)",  // lime
+  "hsl(220, 60%, 55%)",  // royal blue
+  "hsl(0, 65%, 50%)",    // red
+];
 
 const ReceiptUpload = () => {
   const navigate = useNavigate();
@@ -23,8 +40,10 @@ const ReceiptUpload = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
   const [tipValue, setTipValue] = useState("");
   const [tipMode, setTipMode] = useState<"percent" | "flat">("percent");
+  const [receiptExpanded, setReceiptExpanded] = useState(false);
 
   const session = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
   const isNight = session.mode === "night";
@@ -71,6 +90,8 @@ const ReceiptUpload = () => {
         name: item.name,
         price: item.price,
         quantity: item.quantity || 1,
+        mismatch: item.mismatch || false,
+        color: ITEM_COLORS[i % ITEM_COLORS.length],
       }));
 
       setItems(extracted);
@@ -87,12 +108,15 @@ const ReceiptUpload = () => {
     setEditingId(item.id);
     setEditName(item.name);
     setEditPrice(item.price.toFixed(2));
+    setEditQuantity(item.quantity.toString());
   };
 
   const saveEdit = (id: string) => {
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, name: editName, price: parseFloat(editPrice) || 0 } : item
+        item.id === id
+          ? { ...item, name: editName, price: parseFloat(editPrice) || 0, quantity: parseInt(editQuantity) || 1, mismatch: false }
+          : item
       )
     );
     setEditingId(null);
@@ -108,6 +132,7 @@ const ReceiptUpload = () => {
       name: "New item",
       price: 0,
       quantity: 1,
+      color: ITEM_COLORS[items.length % ITEM_COLORS.length],
     };
     setItems((prev) => [...prev, newItem]);
     startEdit(newItem);
@@ -118,6 +143,8 @@ const ReceiptUpload = () => {
     ? subtotal * (parseFloat(tipValue) || 0) / 100
     : parseFloat(tipValue) || 0;
   const total = subtotal + tipAmount;
+
+  const hasMismatches = items.some((item) => item.mismatch);
 
   const handleContinue = () => {
     sessionStorage.setItem(
@@ -204,9 +231,57 @@ const ReceiptUpload = () => {
           </motion.div>
         )}
 
-        {/* Items list */}
+        {/* Items list with receipt reference */}
         {items.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col">
+
+            {/* Collapsible receipt image */}
+            {preview && (
+              <div className="mb-4 rounded-xl border border-border bg-card overflow-hidden">
+                <button
+                  onClick={() => setReceiptExpanded(!receiptExpanded)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-foreground"
+                >
+                  <span className="font-display">📄 Receipt Photo</span>
+                  {receiptExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </button>
+                <AnimatePresence>
+                  {receiptExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-3 pb-3">
+                        <div className="max-h-80 overflow-y-auto rounded-lg border border-border">
+                          <img src={preview} alt="Receipt" className="w-full object-contain" />
+                        </div>
+                        {/* Color legend */}
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {items.map((item) => (
+                            <div key={item.id} className="flex items-center gap-1.5">
+                              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                              <span className="text-xs text-muted-foreground truncate max-w-[100px]">{item.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Mismatch warning */}
+            {hasMismatches && (
+              <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-accent/10 border border-accent/30">
+                <AlertTriangle className="w-4 h-4 text-accent flex-shrink-0" />
+                <p className="text-xs text-accent">Some items may have incorrect quantity/price splits. Review flagged items.</p>
+              </div>
+            )}
+
             <div className="space-y-2 mb-6">
               <AnimatePresence>
                 {items.map((item) => (
@@ -216,8 +291,11 @@ const ReceiptUpload = () => {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border"
+                    className={`flex items-center gap-3 p-3 rounded-xl bg-card border ${item.mismatch ? "border-accent/50 bg-accent/5" : "border-border"}`}
                   >
+                    {/* Color dot */}
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+
                     {editingId === item.id ? (
                       <>
                         <div className="flex-1 flex flex-col gap-2">
@@ -227,16 +305,28 @@ const ReceiptUpload = () => {
                             className="w-full bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                             placeholder="Item name"
                           />
-                          <div className="flex items-center gap-1">
-                            <span className="text-sm text-muted-foreground">€</span>
-                            <input
-                              value={editPrice}
-                              onChange={(e) => setEditPrice(e.target.value)}
-                              type="number"
-                              step="0.01"
-                              className="w-24 bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                              placeholder="0.00"
-                            />
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">Qty</span>
+                              <input
+                                value={editQuantity}
+                                onChange={(e) => setEditQuantity(e.target.value)}
+                                type="number"
+                                min="1"
+                                className="w-14 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">€</span>
+                              <input
+                                value={editPrice}
+                                onChange={(e) => setEditPrice(e.target.value)}
+                                type="number"
+                                step="0.01"
+                                className="w-20 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                                placeholder="0.00"
+                              />
+                            </div>
                           </div>
                         </div>
                         <button onClick={() => saveEdit(item.id)} className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -253,10 +343,16 @@ const ReceiptUpload = () => {
                             {item.quantity > 1 && <span className="text-muted-foreground">{item.quantity}× </span>}
                             {item.name}
                           </p>
+                          {item.quantity > 1 && (
+                            <p className="text-xs text-muted-foreground">€{item.price.toFixed(2)} each</p>
+                          )}
                         </div>
-                        <span className="text-sm font-semibold text-foreground whitespace-nowrap">
-                          €{(item.price * item.quantity).toFixed(2)}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          {item.mismatch && <AlertTriangle className="w-3.5 h-3.5 text-accent" />}
+                          <span className="text-sm font-semibold text-foreground whitespace-nowrap">
+                            €{(item.price * item.quantity).toFixed(2)}
+                          </span>
+                        </div>
                         <button onClick={() => startEdit(item)} className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
                           <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                         </button>
@@ -297,7 +393,7 @@ const ReceiptUpload = () => {
                     €
                   </button>
                 </div>
-                <div className="flex-1 relative">
+                <div className="flex-1">
                   <input
                     type="number"
                     step="0.01"
@@ -307,6 +403,12 @@ const ReceiptUpload = () => {
                     className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
+                <button
+                  onClick={() => setTipValue("0")}
+                  className="px-3 py-2 rounded-lg bg-muted border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+                >
+                  No tip
+                </button>
               </div>
               {tipAmount > 0 && (
                 <p className="text-xs text-muted-foreground mt-2">
