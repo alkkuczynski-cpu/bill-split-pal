@@ -106,18 +106,23 @@ const ReceiptUpload = () => {
     }
   };
 
+  const parsePriceInput = (val: string): number => {
+    const cleaned = val.replace(/\s/g, '').replace(/,/g, '.');
+    return parseFloat(cleaned) || 0;
+  };
+
   const startEdit = (item: LineItem) => {
     setEditingId(item.id);
     setEditName(item.name);
     setEditPrice(item.price.toFixed(2));
-    setEditQuantity(item.quantity.toString());
+    setEditQuantity(item.quantity);
   };
 
   const saveEdit = (id: string) => {
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, name: editName, price: parseFloat(editPrice) || 0, quantity: parseInt(editQuantity) || 1, mismatch: false }
+          ? { ...item, name: editName, price: parsePriceInput(editPrice), quantity: editQuantity, mismatch: false }
           : item
       )
     );
