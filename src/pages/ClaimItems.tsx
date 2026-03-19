@@ -426,12 +426,14 @@ const ClaimItems = () => {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-6 pb-2">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-10 h-10 rounded-xl bg-card flex items-center justify-center shadow-sm border border-border"
-        >
-          <ArrowLeft className="w-5 h-5 text-foreground" />
-        </button>
+        {!sessionId && (
+          <button
+            onClick={() => navigate(-1)}
+            className="w-10 h-10 rounded-xl bg-card flex items-center justify-center shadow-sm border border-border"
+          >
+            <ArrowLeft className="w-5 h-5 text-foreground" />
+          </button>
+        )}
         <div>
           <h1 className="text-xl font-display font-bold text-foreground">Claim Items</h1>
           <p className="text-sm text-muted-foreground">Tap to claim · Tap again for details</p>
