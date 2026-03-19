@@ -40,10 +40,12 @@ const ReceiptUpload = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
+  const [editQuantity, setEditQuantity] = useState(1);
   const [tipValue, setTipValue] = useState("");
   const [tipMode, setTipMode] = useState<"percent" | "flat">("percent");
+  const [noTipActive, setNoTipActive] = useState(false);
   const [receiptExpanded, setReceiptExpanded] = useState(false);
+  const newItemRef = useRef<HTMLInputElement>(null);
 
   const session = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
   const isNight = session.mode === "night";
@@ -104,18 +106,23 @@ const ReceiptUpload = () => {
     }
   };
 
+  const parsePriceInput = (val: string): number => {
+    const cleaned = val.replace(/\s/g, '').replace(/,/g, '.');
+    return parseFloat(cleaned) || 0;
+  };
+
   const startEdit = (item: LineItem) => {
     setEditingId(item.id);
     setEditName(item.name);
     setEditPrice(item.price.toFixed(2));
-    setEditQuantity(item.quantity.toString());
+    setEditQuantity(item.quantity);
   };
 
   const saveEdit = (id: string) => {
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, name: editName, price: parseFloat(editPrice) || 0, quantity: parseInt(editQuantity) || 1, mismatch: false }
+          ? { ...item, name: editName, price: parsePriceInput(editPrice), quantity: editQuantity, mismatch: false }
           : item
       )
     );
@@ -129,19 +136,20 @@ const ReceiptUpload = () => {
   const addItem = () => {
     const newItem: LineItem = {
       id: `item-new-${Date.now()}`,
-      name: "New item",
+      name: "",
       price: 0,
       quantity: 1,
       color: ITEM_COLORS[items.length % ITEM_COLORS.length],
     };
     setItems((prev) => [...prev, newItem]);
     startEdit(newItem);
+    setTimeout(() => newItemRef.current?.focus(), 50);
   };
 
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const tipAmount = tipMode === "percent"
-    ? subtotal * (parseFloat(tipValue) || 0) / 100
-    : parseFloat(tipValue) || 0;
+    ? subtotal * (parsePriceInput(tipValue)) / 100
+    : parsePriceInput(tipValue);
   const total = subtotal + tipAmount;
 
   const hasMismatches = items.some((item) => item.mismatch);
@@ -300,29 +308,38 @@ const ReceiptUpload = () => {
                       <>
                         <div className="flex-1 flex flex-col gap-2">
                           <input
+                            ref={newItemRef}
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             className="w-full bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                            placeholder="Item name"
                           />
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground">Qty</span>
-                              <input
-                                value={editQuantity}
-                                onChange={(e) => setEditQuantity(e.target.value)}
-                                type="number"
-                                min="1"
-                                className="w-14 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                              />
+                              <div className="flex items-center rounded-lg border border-border overflow-hidden">
+                                <button
+                                  onClick={() => setEditQuantity(Math.max(1, editQuantity - 1))}
+                                  className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
+                                >
+                                  −
+                                </button>
+                                <span className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background">
+                                  {editQuantity}
+                                </span>
+                                <button
+                                  onClick={() => setEditQuantity(editQuantity + 1)}
+                                  className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground">€</span>
                               <input
                                 value={editPrice}
                                 onChange={(e) => setEditPrice(e.target.value)}
-                                type="number"
-                                step="0.01"
+                                inputMode="decimal"
                                 className="w-20 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                                 placeholder="0.00"
                               />
@@ -381,13 +398,13 @@ const ReceiptUpload = () => {
               <div className="flex items-center gap-2">
                 <div className="flex rounded-lg border border-border overflow-hidden">
                   <button
-                    onClick={() => setTipMode("percent")}
+                    onClick={() => { setTipMode("percent"); setNoTipActive(false); }}
                     className={`px-3 py-1.5 text-sm font-medium transition-colors ${tipMode === "percent" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"}`}
                   >
                     %
                   </button>
                   <button
-                    onClick={() => setTipMode("flat")}
+                    onClick={() => { setTipMode("flat"); setNoTipActive(false); }}
                     className={`px-3 py-1.5 text-sm font-medium transition-colors ${tipMode === "flat" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"}`}
                   >
                     €
@@ -395,17 +412,20 @@ const ReceiptUpload = () => {
                 </div>
                 <div className="flex-1">
                   <input
-                    type="number"
-                    step="0.01"
+                    inputMode="decimal"
                     value={tipValue}
-                    onChange={(e) => setTipValue(e.target.value)}
+                    onChange={(e) => { setTipValue(e.target.value); setNoTipActive(false); }}
                     placeholder={tipMode === "percent" ? "e.g. 10" : "e.g. 5.00"}
                     className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <button
-                  onClick={() => setTipValue("0")}
-                  className="px-3 py-2 rounded-lg bg-muted border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+                  onClick={() => { setTipValue("0"); setNoTipActive(true); }}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap ${
+                    noTipActive
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                  }`}
                 >
                   No tip
                 </button>
