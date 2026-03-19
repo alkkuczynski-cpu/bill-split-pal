@@ -41,6 +41,8 @@ const ReceiptUpload = () => {
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editQuantity, setEditQuantity] = useState(1);
+  const [editingQtyInline, setEditingQtyInline] = useState<string | null>(null);
+  const [inlineQtyValue, setInlineQtyValue] = useState("");
   const [tipValue, setTipValue] = useState("");
   const [tipMode, setTipMode] = useState<"percent" | "flat">("percent");
   const [noTipActive, setNoTipActive] = useState(false);
