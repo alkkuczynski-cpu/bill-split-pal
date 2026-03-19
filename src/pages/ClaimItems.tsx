@@ -143,11 +143,11 @@ const ClaimItems = () => {
     fetchData();
   }, [sessionId, navigate]);
 
-  // Realtime subscription
+  // Realtime subscription for claims, people, and session lock
   useEffect(() => {
     if (!sessionId) return;
     const channel = supabase
-      .channel(`claims-${sessionId}`)
+      .channel(`session-${sessionId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "item_claims", filter: `session_id=eq.${sessionId}` },
@@ -166,9 +166,37 @@ const ClaimItems = () => {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "session_people", filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          const newPerson = payload.new as Person;
+          setPeople((prev) => {
+            if (prev.some((p) => p.id === newPerson.id)) return prev;
+            return [...prev, newPerson];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated.locked) {
+            setSessionLocked(true);
+            if (isGuest) {
+              setFinalisedBanner(true);
+              const guestPersonId = sessionStorage.getItem("splitpal_guest_person_id");
+              setTimeout(() => {
+                navigate(`/guest-summary?session=${sessionId}&person=${guestPersonId}`);
+              }, 2500);
+            }
+          }
+        }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [sessionId]);
+  }, [sessionId, isGuest, navigate]);
 
   // ─── Claim actions ───
 
