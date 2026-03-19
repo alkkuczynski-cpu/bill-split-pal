@@ -63,9 +63,9 @@ Return ONLY valid JSON using the extract_items tool.`,
                 type: "image_url",
                 image_url: { url: `data:${mimeType};base64,${cleanBase64}` },
               },
-              {
+               {
                 type: "text",
-                text: "Extract all line items and their prices from this receipt. Include quantities if shown. Use euro amounts.",
+                text: "Extract all line items and their prices from this receipt. For each item: if a quantity is shown (e.g. '2x'), divide the line total by the quantity to get the unit price. Use euro amounts. Verify that quantity × unit_price = line_total for every item.",
               },
             ],
           },
