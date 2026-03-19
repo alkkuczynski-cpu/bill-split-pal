@@ -535,7 +535,7 @@ const ClaimItems = () => {
                   </div>
 
                   {/* Person avatars */}
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-start gap-3 flex-wrap">
                     {(() => {
                       if (!isMultiUnit) {
                         // Single-unit items: simple toggle avatars
