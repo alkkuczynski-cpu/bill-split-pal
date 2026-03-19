@@ -348,15 +348,17 @@ const Summary = () => {
               </div>
 
               {/* Revolut button */}
-              <a
-                href={revolutLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
-              >
-                Request €{data.total.toFixed(2)} on Revolut
-                <ExternalLink className="w-4 h-4" />
-              </a>
+              {revolutLink && (
+                <a
+                  href={revolutLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                >
+                  Request €{data.total.toFixed(2)} on Revolut
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
             </motion.div>
           );
         })}
