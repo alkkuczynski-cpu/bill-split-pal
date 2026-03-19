@@ -156,12 +156,53 @@ const ReceiptUpload = () => {
 
   const hasMismatches = items.some((item) => item.mismatch);
 
-  const handleContinue = () => {
-    sessionStorage.setItem(
-      "splitpal_items",
-      JSON.stringify({ items, tipAmount, total })
-    );
-    navigate("/claim");
+  const handleContinue = async () => {
+    const sessionData = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
+
+    try {
+      // Create session in DB
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from("sessions")
+        .insert({ mode: sessionData.mode || "bill", tip_amount: tipAmount })
+        .select()
+        .single();
+
+      if (sessionError || !sessionRow) {
+        console.error("Session create error:", sessionError);
+        // Fallback to local mode
+        sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+        navigate("/claim");
+        return;
+      }
+
+      const sessionId = sessionRow.id;
+
+      // Insert people
+      const peopleToInsert = (sessionData.people || []).map((p: any, i: number) => ({
+        session_id: sessionId,
+        name: p.name,
+        is_payer: p.isPayer || false,
+        sort_order: i,
+      }));
+      await supabase.from("session_people").insert(peopleToInsert);
+
+      // Insert items
+      const itemsToInsert = items.map((item, i) => ({
+        session_id: sessionId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        color: item.color,
+        sort_order: i,
+      }));
+      await supabase.from("session_items").insert(itemsToInsert);
+
+      navigate(`/claim?session=${sessionId}`);
+    } catch (err) {
+      console.error("Error saving session:", err);
+      sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+      navigate("/claim");
+    }
   };
 
   return (
