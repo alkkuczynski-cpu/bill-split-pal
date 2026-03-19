@@ -44,7 +44,17 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are a receipt parser. Extract all line items from the receipt image. For each item, extract the name and price in euros. Return ONLY valid JSON using the extract_items tool.`,
+            content: `You are a receipt parser. Extract all line items from the receipt image.
+
+CRITICAL RULES FOR QUANTITY AND PRICE:
+- The "price" you return must be the UNIT price (price for ONE item), NOT the line total.
+- If a line shows "2x Guinness €11.80", that means 2 items at €5.90 each. Return quantity=2, price=5.90.
+- If a line shows "Burger €14.50", that means 1 item at €14.50. Return quantity=1, price=14.50.
+- Always verify: quantity × price = the line total shown on the receipt.
+- Cross-check that the sum of all (quantity × price) equals the receipt subtotal (before tip/tax).
+- If a line total doesn't divide evenly by quantity, return the line total as price with quantity=1 and set "mismatch" to true.
+
+Return ONLY valid JSON using the extract_items tool.`,
           },
           {
             role: "user",
