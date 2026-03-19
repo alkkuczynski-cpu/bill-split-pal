@@ -326,9 +326,28 @@ const ReceiptUpload = () => {
                                 >
                                   −
                                 </button>
-                                <span className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background">
-                                  {editQuantity}
-                                </span>
+                                {editingQtyInline === editingId ? (
+                                  <input
+                                    value={inlineQtyValue}
+                                    onChange={(e) => setInlineQtyValue(e.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => {
+                                      const v = parseInt(inlineQtyValue, 10);
+                                      setEditQuantity(v >= 1 ? v : 1);
+                                      setEditingQtyInline(null);
+                                    }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                    inputMode="numeric"
+                                    autoFocus
+                                    className="w-10 h-8 text-center text-sm font-medium text-foreground bg-background border-x border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => { setEditingQtyInline(editingId); setInlineQtyValue(String(editQuantity)); }}
+                                    className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background cursor-text"
+                                  >
+                                    {editQuantity}
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setEditQuantity(editQuantity + 1)}
                                   className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
