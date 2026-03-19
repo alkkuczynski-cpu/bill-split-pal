@@ -22,6 +22,7 @@ export type Database = {
           person_id: string
           quantity: number
           session_id: string
+          shared_with: Json
         }
         Insert: {
           created_at?: string
@@ -30,6 +31,7 @@ export type Database = {
           person_id: string
           quantity?: number
           session_id: string
+          shared_with?: Json
         }
         Update: {
           created_at?: string
@@ -38,6 +40,7 @@ export type Database = {
           person_id?: string
           quantity?: number
           session_id?: string
+          shared_with?: Json
         }
         Relationships: [
           {
