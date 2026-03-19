@@ -565,7 +565,7 @@ const ClaimItems = () => {
                         });
                       }
 
-                      // Multi-unit items: show share groups as merged bubbles + solo avatars with fractions
+                      // Multi-unit items: build share groups + solo avatars
                       const shareGroups: { ownerClaim: Claim; members: string[] }[] = [];
                       const groupedPeople = new Set<string>();
 
@@ -579,88 +579,69 @@ const ClaimItems = () => {
 
                       const elements: React.ReactNode[] = [];
 
+                      // Helper to render a single avatar pill with fraction below
+                      const renderAvatar = (person: Person, pi: number, itemId: string, showFraction: boolean) => {
+                        const claim = itemClaims.find((c) => c.person_id === person.id);
+                        const isClaimed = !!claim || groupedPeople.has(person.id);
+                        const avatarColor = AVATAR_COLORS[pi % AVATAR_COLORS.length];
+                        const frac = getPersonFraction(person.id, itemId);
+                        const hasFrac = frac.qty > 0 || frac.hasHalf;
+
+                        return (
+                          <div key={person.id} className="flex flex-col items-center gap-0.5">
+                            <button
+                              onClick={() => handleAvatarClick(itemId, person.id)}
+                              onContextMenu={(e) => e.preventDefault()}
+                              className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
+                                isClaimed
+                                  ? "text-white shadow-sm"
+                                  : "bg-muted text-muted-foreground border border-border"
+                              }`}
+                              style={isClaimed ? { backgroundColor: avatarColor } : undefined}
+                            >
+                              {person.is_payer && (
+                                <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed ? "white" : "hsl(45, 85%, 50%)" }} />
+                              )}
+                              <span className="truncate max-w-[60px]">{person.name}</span>
+                              {isClaimed && <Check className="w-3 h-3 flex-shrink-0" />}
+                            </button>
+                            {showFraction && hasFrac && (
+                              <span className="text-[10px] font-bold leading-none" style={{ color: avatarColor }}>
+                                {formatFraction(frac.qty, frac.hasHalf)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      };
+
                       // Render ungrouped people (solo claims + unclaimed)
                       people.forEach((person, pi) => {
                         if (groupedPeople.has(person.id)) return;
-                        const claim = itemClaims.find((c) => c.person_id === person.id);
-                        const isClaimed = !!claim;
-                        const avatarColor = AVATAR_COLORS[pi % AVATAR_COLORS.length];
-                        const frac = getPersonFraction(person.id, item.id);
-
-                        elements.push(
-                          <button
-                            key={person.id}
-                            onClick={() => handleAvatarClick(item.id, person.id)}
-                            onContextMenu={(e) => e.preventDefault()}
-                            className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
-                              isClaimed
-                                ? "text-white shadow-sm"
-                                : "bg-muted text-muted-foreground border border-border"
-                            }`}
-                            style={isClaimed ? { backgroundColor: avatarColor } : undefined}
-                          >
-                            {person.is_payer && (
-                              <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed ? "white" : "hsl(45, 85%, 50%)" }} />
-                            )}
-                            <span className="truncate max-w-[60px]">{person.name}</span>
-                            {isClaimed && (
-                              <span className="text-[10px] font-bold opacity-90">{formatFraction(frac.qty, frac.hasHalf)}</span>
-                            )}
-                          </button>
-                        );
+                        elements.push(renderAvatar(person, pi, item.id, true));
                       });
 
-                      // Render share group Venn-diagram bubbles
+                      // Render share groups as overlapping clusters
                       shareGroups.forEach((group, gi) => {
-                        const avatarSize = 32;
-                        const positions = vennPositions(group.members.length, avatarSize);
-                        const maxX = Math.max(...positions.map((p) => p.x)) + avatarSize;
-                        const maxY = Math.max(...positions.map((p) => p.y)) + avatarSize;
-
                         elements.push(
-                          <div key={`share-${gi}`} className="flex items-center gap-1.5">
+                          <div key={`share-${gi}`} className="flex items-center -space-x-2 relative">
+                            {/* Subtle connecting glow behind the cluster */}
                             <div
-                              className="relative cursor-pointer active:scale-95 transition-transform"
-                              onClick={() => handleAvatarClick(item.id, group.ownerClaim.person_id)}
-                              style={{ width: maxX, height: maxY }}
-                            >
-                              {group.members.map((pid, i) => {
-                                const pIndex = people.findIndex((p) => p.id === pid);
-                                const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-                                const person = people.find((p) => p.id === pid);
-                                const pos = positions[i];
-                                return (
-                                  <div
-                                    key={pid}
-                                    className="absolute rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-card"
-                                    style={{
-                                      width: avatarSize,
-                                      height: avatarSize,
-                                      left: pos.x,
-                                      top: pos.y,
-                                      backgroundColor: color,
-                                      zIndex: i + 1,
-                                    }}
-                                  >
-                                    {person ? getInitials(person.name) : "?"}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {/* Fractions for each member */}
-                            <div className="flex flex-col gap-0">
-                              {group.members.map((pid) => {
-                                const person = people.find((p) => p.id === pid);
-                                const pIndex = people.findIndex((p) => p.id === pid);
-                                const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-                                const frac = getPersonFraction(pid, item.id);
-                                return (
-                                  <span key={pid} className="text-[10px] font-bold leading-tight" style={{ color }}>
-                                    {person?.name?.split(" ")[0]}: {formatFraction(frac.qty, frac.hasHalf)}
-                                  </span>
-                                );
-                              })}
-                            </div>
+                              className="absolute inset-0 rounded-full opacity-20 blur-sm pointer-events-none"
+                              style={{
+                                background: `linear-gradient(90deg, ${
+                                  group.members.map((pid) => {
+                                    const idx = people.findIndex((p) => p.id === pid);
+                                    return AVATAR_COLORS[idx % AVATAR_COLORS.length];
+                                  }).join(", ")
+                                })`,
+                              }}
+                            />
+                            {group.members.map((pid) => {
+                              const pIndex = people.findIndex((p) => p.id === pid);
+                              const person = people[pIndex];
+                              if (!person) return null;
+                              return renderAvatar(person, pIndex, item.id, true);
+                            })}
                           </div>
                         );
                       });
