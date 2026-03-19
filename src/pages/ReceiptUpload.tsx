@@ -136,13 +136,14 @@ const ReceiptUpload = () => {
   const addItem = () => {
     const newItem: LineItem = {
       id: `item-new-${Date.now()}`,
-      name: "New item",
+      name: "",
       price: 0,
       quantity: 1,
       color: ITEM_COLORS[items.length % ITEM_COLORS.length],
     };
     setItems((prev) => [...prev, newItem]);
     startEdit(newItem);
+    setTimeout(() => newItemRef.current?.focus(), 50);
   };
 
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
