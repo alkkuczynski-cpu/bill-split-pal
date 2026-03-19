@@ -56,6 +56,8 @@ const ClaimItems = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
+  const isGuest = searchParams.get("guest") === "true";
+  const { user } = useAuth();
 
   const [people, setPeople] = useState<Person[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -64,6 +66,10 @@ const ClaimItems = () => {
   const [loading, setLoading] = useState(true);
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [receiptExpanded, setReceiptExpanded] = useState(false);
+  const [sessionType, setSessionType] = useState<string>("pass_phone");
+  const [sessionLocked, setSessionLocked] = useState(false);
+  const [showFinaliseDialog, setShowFinaliseDialog] = useState(false);
+  const [finalisedBanner, setFinalisedBanner] = useState(false);
 
   // Assignment panel state
   const [panelOpen, setPanelOpen] = useState(false);
