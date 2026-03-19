@@ -369,21 +369,26 @@ const ClaimItems = () => {
     return `${qty}`;
   };
 
-  // SVG pie segment path
-  const pieSegmentPath = (index: number, total: number, radius: number) => {
-    if (total === 1) return `M 0 0 m -${radius} 0 a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 -${radius * 2} 0`;
-    const startAngle = (index / total) * 360 - 90;
-    const endAngle = ((index + 1) / total) * 360 - 90;
-    const startRad = (startAngle * Math.PI) / 180;
-    const endRad = (endAngle * Math.PI) / 180;
-    const r = radius;
-    const cx = r, cy = r;
-    const x1 = cx + r * Math.cos(startRad);
-    const y1 = cy + r * Math.sin(startRad);
-    const x2 = cx + r * Math.cos(endRad);
-    const y2 = cy + r * Math.sin(endRad);
-    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
-    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+  // Venn diagram positions for overlapping circles
+  const vennPositions = (count: number, avatarSize: number) => {
+    const overlap = avatarSize * 0.3;
+    if (count === 2) {
+      return [
+        { x: 0, y: 0 },
+        { x: avatarSize - overlap, y: 0 },
+      ];
+    }
+    if (count === 3) {
+      const dx = (avatarSize - overlap) * 0.5;
+      const dy = (avatarSize - overlap) * 0.6;
+      return [
+        { x: dx, y: 0 },
+        { x: 0, y: dy },
+        { x: dx * 2, y: dy },
+      ];
+    }
+    // 4+: horizontal overlap
+    return Array.from({ length: count }, (_, i) => ({ x: i * (avatarSize - overlap), y: 0 }));
   };
 
   const handleContinue = () => {
