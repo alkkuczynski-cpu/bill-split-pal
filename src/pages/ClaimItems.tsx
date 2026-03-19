@@ -747,19 +747,35 @@ const ClaimItems = () => {
               </DrawerHeader>
 
               {/* Quantity stepper */}
-              <div className="mb-4">
+              <div className="mb-4" data-vaul-no-drag>
                 <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Units to take</p>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setPanelQty(Math.max(1, panelQty - 1))}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setPanelQty(Math.max(1, panelQty - 1)); }}
                     disabled={panelQty <= 1}
                     className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform disabled:opacity-30"
                   >
                     <Minus className="w-5 h-5" />
                   </button>
-                  <span className="w-10 text-center text-lg font-bold text-foreground">{panelQty}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={panelMaxQty}
+                    value={panelQty}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) setPanelQty(Math.max(1, Math.min(panelMaxQty, val)));
+                    }}
+                    className="w-12 text-center text-lg font-bold text-foreground bg-transparent border border-border rounded-lg py-1 outline-none focus:ring-2 focus:ring-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
                   <button
-                    onClick={() => setPanelQty(Math.min(panelMaxQty, panelQty + 1))}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setPanelQty(Math.min(panelMaxQty, panelQty + 1)); }}
                     disabled={panelQty >= panelMaxQty}
                     className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform disabled:opacity-30"
                   >
