@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Crown, Check, Users, ChevronDown, ChevronUp,
-  Minus, Plus, AlertTriangle, Share2,
+  Minus, Plus, AlertTriangle, Share2, XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -60,18 +60,13 @@ const ClaimItems = () => {
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [receiptExpanded, setReceiptExpanded] = useState(false);
 
-  // Assignment panel
+  // Assignment panel state
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelItemId, setPanelItemId] = useState<string | null>(null);
   const [panelPersonId, setPanelPersonId] = useState<string | null>(null);
   const [panelQty, setPanelQty] = useState(1);
   const [panelSharedWith, setPanelSharedWith] = useState<string[]>([]);
 
-  // Long-press
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressTriggered = useRef(false);
-
-  // Parse shared_with from DB row
   const parseSharedWith = (val: any): string[] => {
     if (Array.isArray(val)) return val;
     if (typeof val === "string") {
@@ -100,18 +95,10 @@ const ClaimItems = () => {
         const { items: storedItems, tipAmount: storedTip } = JSON.parse(stored);
         const { people: storedPeople } = JSON.parse(sessionData);
         setItems(storedItems.map((item: any, i: number) => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          color: item.color,
-          sort_order: i,
+          id: item.id, name: item.name, price: item.price, quantity: item.quantity, color: item.color, sort_order: i,
         })));
         setPeople(storedPeople.map((p: any, i: number) => ({
-          id: `local-${i}`,
-          name: p.name,
-          is_payer: p.isPayer,
-          sort_order: i,
+          id: `local-${i}`, name: p.name, is_payer: p.isPayer, sort_order: i,
         })));
         setTipAmount(storedTip || 0);
         setLoading(false);
@@ -129,27 +116,23 @@ const ClaimItems = () => {
         supabase.from("session_items").select("*").eq("session_id", sessionId).order("sort_order"),
         supabase.from("item_claims").select("*").eq("session_id", sessionId),
       ]);
-
       if (sessionRes.error || !sessionRes.data) {
         toast.error("Session not found");
         navigate("/");
         return;
       }
-
       setTipAmount(Number(sessionRes.data.tip_amount) || 0);
       setPeople((peopleRes.data || []) as Person[]);
       setItems((itemsRes.data || []) as Item[]);
       setClaims((claimsRes.data || []).map(claimFromRow));
       setLoading(false);
     };
-
     fetchData();
   }, [sessionId, navigate]);
 
   // Realtime subscription
   useEffect(() => {
     if (!sessionId) return;
-
     const channel = supabase
       .channel(`claims-${sessionId}`)
       .on(
@@ -160,172 +143,136 @@ const ClaimItems = () => {
             const newClaim = claimFromRow(payload.new);
             setClaims((prev) => {
               if (prev.some((c) => c.id === newClaim.id)) return prev;
-              const filtered = prev.filter(
-                (c) => !(c.id.startsWith("temp-") && c.item_id === newClaim.item_id && c.person_id === newClaim.person_id)
-              );
-              return [...filtered, newClaim];
+              return [...prev.filter((c) => !(c.id.startsWith("temp-") && c.item_id === newClaim.item_id && c.person_id === newClaim.person_id)), newClaim];
             });
           } else if (payload.eventType === "UPDATE") {
             const updated = claimFromRow(payload.new);
-            setClaims((prev) =>
-              prev.map((c) => c.id === updated.id ? updated : c)
-            );
+            setClaims((prev) => prev.map((c) => c.id === updated.id ? updated : c));
           } else if (payload.eventType === "DELETE") {
             setClaims((prev) => prev.filter((c) => c.id !== payload.old.id));
           }
         }
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [sessionId]);
 
-  // Toggle claim (simple tap - for single-unit items or initial claim on multi-unit)
-  const toggleClaim = async (itemId: string, personId: string) => {
-    const existing = claims.find((c) => c.item_id === itemId && c.person_id === personId);
+  // ─── Claim actions ───
 
+  const deleteClaim = async (claim: Claim) => {
+    setClaims((prev) => prev.filter((c) => c.id !== claim.id));
+    if (sessionId && !claim.id.startsWith("temp-")) {
+      const { error } = await supabase.from("item_claims").delete().eq("id", claim.id);
+      if (error) setClaims((prev) => [...prev, claim]);
+    }
+  };
+
+  const createClaim = async (itemId: string, personId: string, qty = 1, sharedWith: string[] = []) => {
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const optimistic: Claim = { id: tempId, item_id: itemId, person_id: personId, quantity: qty, shared_with: sharedWith };
+    setClaims((prev) => [...prev, optimistic]);
     if (sessionId) {
-      if (existing) {
-        setClaims((prev) => prev.filter((c) => c.id !== existing.id));
-        const { error } = await supabase.from("item_claims").delete().eq("id", existing.id);
-        if (error) setClaims((prev) => [...prev, existing]);
-      } else {
-        const tempId = `temp-${Date.now()}-${Math.random()}`;
-        const optimistic: Claim = { id: tempId, item_id: itemId, person_id: personId, quantity: 1, shared_with: [] };
-        setClaims((prev) => [...prev, optimistic]);
-        const { data, error } = await supabase
-          .from("item_claims")
-          .insert({ session_id: sessionId, item_id: itemId, person_id: personId, quantity: 1, shared_with: [] } as any)
-          .select()
-          .single();
-        if (error) {
-          setClaims((prev) => prev.filter((c) => c.id !== tempId));
-        } else if (data) {
-          setClaims((prev) => prev.map((c) => c.id === tempId ? claimFromRow(data) : c));
-        }
-      }
-    } else {
-      if (existing) {
-        setClaims((prev) => prev.filter((c) => c.id !== existing.id));
-      } else {
-        setClaims((prev) => [
-          ...prev,
-          { id: `claim-${Date.now()}-${Math.random()}`, item_id: itemId, person_id: personId, quantity: 1, shared_with: [] },
-        ]);
+      const { data, error } = await supabase
+        .from("item_claims")
+        .insert({ session_id: sessionId, item_id: itemId, person_id: personId, quantity: qty, shared_with: sharedWith } as any)
+        .select().single();
+      if (error) {
+        setClaims((prev) => prev.filter((c) => c.id !== tempId));
+      } else if (data) {
+        setClaims((prev) => prev.map((c) => c.id === tempId ? claimFromRow(data) : c));
       }
     }
   };
 
-  // Open assignment panel for multi-unit items
-  const openPanel = (itemId: string, personId: string) => {
+  const updateClaim = async (claim: Claim, qty: number, sharedWith: string[]) => {
+    const updated = { ...claim, quantity: qty, shared_with: sharedWith };
+    setClaims((prev) => prev.map((c) => c.id === claim.id ? updated : c));
+    if (sessionId && !claim.id.startsWith("temp-")) {
+      const { error } = await supabase
+        .from("item_claims")
+        .update({ quantity: qty, shared_with: sharedWith } as any)
+        .eq("id", claim.id);
+      if (error) {
+        setClaims((prev) => prev.map((c) => c.id === claim.id ? claim : c));
+        toast.error("Failed to update claim");
+      }
+    }
+  };
+
+  // ─── Avatar click handler ───
+
+  const handleAvatarClick = (itemId: string, personId: string) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
     const existing = claims.find((c) => c.item_id === itemId && c.person_id === personId);
+
+    if (item.quantity === 1) {
+      // Single-unit: simple toggle
+      if (existing) {
+        deleteClaim(existing);
+      } else {
+        createClaim(itemId, personId);
+      }
+    } else {
+      // Multi-unit
+      if (existing) {
+        // Second tap → open panel
+        openPanel(itemId, personId, existing);
+      } else {
+        // First tap → assign 1 unit
+        createClaim(itemId, personId, 1);
+      }
+    }
+  };
+
+  // ─── Panel ───
+
+  const openPanel = (itemId: string, personId: string, existing?: Claim) => {
+    const claim = existing || claims.find((c) => c.item_id === itemId && c.person_id === personId);
     setPanelItemId(itemId);
     setPanelPersonId(personId);
-    setPanelQty(existing?.quantity ?? 1);
-    setPanelSharedWith(existing?.shared_with ?? []);
+    setPanelQty(claim?.quantity ?? 1);
+    setPanelSharedWith(claim?.shared_with ?? []);
     setPanelOpen(true);
   };
 
-  // Confirm panel changes
   const confirmPanel = async () => {
     if (!panelItemId || !panelPersonId) return;
     const existing = claims.find((c) => c.item_id === panelItemId && c.person_id === panelPersonId);
 
-    const newClaim: Partial<Claim> = {
-      item_id: panelItemId,
-      person_id: panelPersonId,
-      quantity: panelQty,
-      shared_with: panelSharedWith,
-    };
-
-    if (sessionId) {
-      if (existing) {
-        // Optimistic update
-        setClaims((prev) => prev.map((c) =>
-          c.id === existing.id ? { ...c, quantity: panelQty, shared_with: panelSharedWith } : c
-        ));
-        const { error } = await supabase
-          .from("item_claims")
-          .update({ quantity: panelQty, shared_with: panelSharedWith } as any)
-          .eq("id", existing.id);
-        if (error) {
-          setClaims((prev) => prev.map((c) => c.id === existing.id ? existing : c));
-          toast.error("Failed to update claim");
-        }
-      } else {
-        // Create new claim
-        const tempId = `temp-${Date.now()}-${Math.random()}`;
-        const optimistic: Claim = { id: tempId, ...newClaim } as Claim;
-        setClaims((prev) => [...prev, optimistic]);
-        const { data, error } = await supabase
-          .from("item_claims")
-          .insert({ session_id: sessionId, ...newClaim } as any)
-          .select()
-          .single();
-        if (error) {
-          setClaims((prev) => prev.filter((c) => c.id !== tempId));
-          toast.error("Failed to create claim");
-        } else if (data) {
-          setClaims((prev) => prev.map((c) => c.id === tempId ? claimFromRow(data) : c));
-        }
-      }
-    } else {
-      if (existing) {
-        setClaims((prev) => prev.map((c) =>
-          c.id === existing.id ? { ...c, quantity: panelQty, shared_with: panelSharedWith } : c
-        ));
-      } else {
-        setClaims((prev) => [
-          ...prev,
-          { id: `claim-${Date.now()}-${Math.random()}`, ...newClaim } as Claim,
-        ]);
-      }
+    // qty 0 + no splits = deactivate
+    if (panelQty <= 0 && panelSharedWith.length === 0) {
+      if (existing) await deleteClaim(existing);
+      setPanelOpen(false);
+      return;
     }
 
+    const finalQty = Math.max(0, panelQty);
+
+    if (existing) {
+      await updateClaim(existing, finalQty, panelSharedWith);
+    } else {
+      await createClaim(panelItemId, panelPersonId, finalQty, panelSharedWith);
+    }
     setPanelOpen(false);
   };
 
-  // Long-press handlers
-  const handlePointerDown = (itemId: string, personId: string, isMultiUnit: boolean) => {
-    longPressTriggered.current = false;
-    if (!isMultiUnit) return;
-    longPressTimer.current = setTimeout(() => {
-      longPressTriggered.current = true;
-      openPanel(itemId, personId);
-    }, 400);
+  const cancelAll = async () => {
+    if (!panelItemId || !panelPersonId) return;
+    const existing = claims.find((c) => c.item_id === panelItemId && c.person_id === panelPersonId);
+    if (existing) await deleteClaim(existing);
+    setPanelOpen(false);
   };
 
-  const handlePointerUp = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
+  // ─── Computed values ───
 
-  const handleAvatarClick = (itemId: string, personId: string, isMultiUnit: boolean) => {
-    if (longPressTriggered.current) {
-      longPressTriggered.current = false;
-      return;
-    }
-    // For multi-unit items: if already claimed, open panel. If not, toggle claim.
-    if (isMultiUnit) {
-      const existing = claims.find((c) => c.item_id === itemId && c.person_id === personId);
-      if (existing) {
-        openPanel(itemId, personId);
-        return;
-      }
-    }
-    toggleClaim(itemId, personId);
-  };
+  const getUnitsUsed = (claim: Claim) => claim.quantity + (claim.shared_with.length > 0 ? 1 : 0);
 
-  // Compute per-item info
   const itemClaimInfo = useMemo(() => {
     const info: Record<string, { totalUnits: number; overClaimed: boolean; remaining: number }> = {};
     items.forEach((item) => {
       const itemClaims = claims.filter((c) => c.item_id === item.id);
-      const soloUnits = itemClaims.reduce((s, c) => s + c.quantity, 0);
-      const sharedUnits = itemClaims.filter((c) => c.shared_with.length > 0).length;
-      const totalUnits = soloUnits + sharedUnits;
+      const totalUnits = itemClaims.reduce((s, c) => s + getUnitsUsed(c), 0);
       info[item.id] = {
         totalUnits,
         overClaimed: totalUnits > item.quantity,
@@ -335,7 +282,6 @@ const ClaimItems = () => {
     return info;
   }, [items, claims]);
 
-  // Compute per-person totals
   const personTotals = useMemo(() => {
     const totals: Record<string, { items: number; tip: number }> = {};
     people.forEach((p) => { totals[p.id] = { items: 0, tip: 0 }; });
@@ -347,7 +293,7 @@ const ClaimItems = () => {
       if (item.quantity === 1) {
         // Single-unit: split equally among all claimers
         if (itemClaims.length > 0) {
-          const share = (unitPrice * item.quantity) / itemClaims.length;
+          const share = unitPrice / itemClaims.length;
           itemClaims.forEach((c) => {
             if (totals[c.person_id]) totals[c.person_id].items += share;
           });
@@ -358,7 +304,6 @@ const ClaimItems = () => {
           if (totals[c.person_id]) {
             totals[c.person_id].items += unitPrice * c.quantity;
           }
-          // Shared unit: split 1 unit among initiator + shared_with
           if (c.shared_with.length > 0) {
             const sharers = [c.person_id, ...c.shared_with];
             const costPerPerson = unitPrice / sharers.length;
@@ -375,11 +320,9 @@ const ClaimItems = () => {
       const tipPerPerson = tipAmount / activePeople.length;
       activePeople.forEach((p) => { totals[p.id].tip = tipPerPerson; });
     }
-
     return totals;
   }, [people, items, claims, tipAmount]);
 
-  // Progress
   const totalUnclaimedUnits = useMemo(() => {
     return items.reduce((s, item) => {
       const info = itemClaimInfo[item.id];
@@ -399,7 +342,6 @@ const ClaimItems = () => {
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  // Get all people involved in an item (direct claimers + shared_with participants)
   const getInvolvedPeople = (itemId: string): Set<string> => {
     const involved = new Set<string>();
     claims.filter((c) => c.item_id === itemId).forEach((c) => {
@@ -419,26 +361,23 @@ const ClaimItems = () => {
     }
   };
 
-  // Panel computed values
+  // Panel computed
   const panelItem = items.find((i) => i.id === panelItemId);
   const panelPerson = people.find((p) => p.id === panelPersonId);
 
-  const panelMaxQty = useMemo(() => {
-    if (!panelItemId || !panelPersonId) return 1;
-    const item = items.find((i) => i.id === panelItemId);
-    if (!item) return 1;
-    const otherClaims = claims.filter((c) => c.item_id === panelItemId && c.person_id !== panelPersonId);
-    const otherUnits = otherClaims.reduce((s, c) => s + c.quantity + (c.shared_with.length > 0 ? 1 : 0), 0);
-    const myShared = panelSharedWith.length > 0 ? 1 : 0;
-    return Math.max(1, item.quantity - otherUnits - myShared);
-  }, [panelItemId, panelPersonId, panelSharedWith, items, claims]);
+  // How many units others are using on this item
+  const panelOtherUnits = useMemo(() => {
+    if (!panelItemId || !panelPersonId) return 0;
+    return claims
+      .filter((c) => c.item_id === panelItemId && c.person_id !== panelPersonId)
+      .reduce((s, c) => s + getUnitsUsed(c), 0);
+  }, [panelItemId, panelPersonId, claims]);
 
-  // Clamp panelQty when max changes
-  useEffect(() => {
-    if (panelOpen && panelQty > panelMaxQty) {
-      setPanelQty(panelMaxQty);
-    }
-  }, [panelMaxQty, panelOpen, panelQty]);
+  // My total units in current panel state
+  const panelMyUnits = panelQty + (panelSharedWith.length > 0 ? 1 : 0);
+  const panelTotalUsed = panelOtherUnits + panelMyUnits;
+  const panelOverclaimed = panelItem ? panelTotalUsed > panelItem.quantity : false;
+  const panelRemaining = panelItem ? panelItem.quantity - panelTotalUsed : 0;
 
   if (loading) {
     return (
@@ -460,7 +399,7 @@ const ClaimItems = () => {
         </button>
         <div>
           <h1 className="text-xl font-display font-bold text-foreground">Claim Items</h1>
-          <p className="text-sm text-muted-foreground">Tap to claim · Hold for details</p>
+          <p className="text-sm text-muted-foreground">Tap to claim · Tap again for details</p>
         </div>
       </div>
 
@@ -564,10 +503,7 @@ const ClaimItems = () => {
                       return (
                         <button
                           key={person.id}
-                          onClick={() => handleAvatarClick(item.id, person.id, isMultiUnit)}
-                          onPointerDown={() => handlePointerDown(item.id, person.id, isMultiUnit)}
-                          onPointerUp={handlePointerUp}
-                          onPointerCancel={handlePointerUp}
+                          onClick={() => handleAvatarClick(item.id, person.id)}
                           onContextMenu={(e) => e.preventDefault()}
                           className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
                             isClaimed
@@ -586,13 +522,13 @@ const ClaimItems = () => {
                             <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed || isSharedParticipant ? "white" : "hsl(45, 85%, 50%)" }} />
                           )}
                           <span className="truncate max-w-[60px]">{person.name}</span>
-                          {isClaimed && claim.quantity > 1 && (
-                            <span className="bg-white/30 rounded px-1 text-[10px] font-bold">{claim.quantity}</span>
+                          {isClaimed && isMultiUnit && claim.quantity > 0 && (
+                            <span className="bg-white/30 rounded px-1 text-[10px] font-bold">{claim.quantity}{claim.shared_with.length > 0 ? '+' : ''}</span>
                           )}
                           {isClaimed && claim.shared_with.length > 0 && (
                             <Share2 className="w-3 h-3 flex-shrink-0 opacity-80" />
                           )}
-                          {isClaimed && claim.quantity === 1 && claim.shared_with.length === 0 && (
+                          {isClaimed && !isMultiUnit && (
                             <Check className="w-3 h-3 flex-shrink-0" />
                           )}
                           {isSharedParticipant && (
@@ -612,7 +548,6 @@ const ClaimItems = () => {
                           Over-claimed by {info.totalUnits - item.quantity} unit{info.totalUnits - item.quantity !== 1 ? "s" : ""}
                         </p>
                       )}
-                      {/* Show per-person breakdown for multi-unit items */}
                       {isMultiUnit && itemClaims.length > 0 && (
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                           {itemClaims.map((c) => {
@@ -620,16 +555,16 @@ const ClaimItems = () => {
                             const soloCost = item.price * c.quantity;
                             const sharedCost = c.shared_with.length > 0 ? item.price / (1 + c.shared_with.length) : 0;
                             const totalCost = soloCost + sharedCost;
-                            const unitDesc = c.shared_with.length > 0
-                              ? `${c.quantity}× + split 1`
-                              : `${c.quantity}×`;
+                            const parts: string[] = [];
+                            if (c.quantity > 0) parts.push(`${c.quantity}×`);
+                            if (c.shared_with.length > 0) parts.push(`split 1`);
                             return (
                               <p key={c.id} className="text-xs text-muted-foreground">
-                                {person?.name}: {unitDesc} = €{totalCost.toFixed(2)}
+                                {person?.name}: {parts.join(' + ')} = €{totalCost.toFixed(2)}
                               </p>
                             );
                           })}
-                          {/* Show shared participants who don't have their own claim */}
+                          {/* Shared participants without their own claim */}
                           {itemClaims.filter((c) => c.shared_with.length > 0).map((c) =>
                             c.shared_with
                               .filter((pid) => !itemClaims.some((cl) => cl.person_id === pid))
@@ -645,13 +580,12 @@ const ClaimItems = () => {
                           )}
                         </div>
                       )}
-                      {/* Single-unit items with multiple claimers */}
                       {!isMultiUnit && itemClaims.length > 1 && (
                         <p className="text-xs text-muted-foreground">
                           Split {itemClaims.length} ways · €{(item.price / itemClaims.length).toFixed(2)} each
                         </p>
                       )}
-                      {info && info.remaining > 0 && (
+                      {info && info.remaining > 0 && isMultiUnit && (
                         <p className="text-xs text-muted-foreground opacity-70">
                           {info.remaining} unit{info.remaining !== 1 ? "s" : ""} unclaimed
                         </p>
@@ -734,7 +668,7 @@ const ClaimItems = () => {
         </motion.button>
       </div>
 
-      {/* Assignment Panel Drawer */}
+      {/* Assignment Panel Drawer — multi-unit items only */}
       <Drawer open={panelOpen} onOpenChange={setPanelOpen}>
         <DrawerContent>
           {panelItem && panelPerson && (
@@ -746,6 +680,21 @@ const ClaimItems = () => {
                 <p className="text-xs text-muted-foreground">€{panelItem.price.toFixed(2)} per unit</p>
               </DrawerHeader>
 
+              {/* Overclaim warning */}
+              {panelOverclaimed && (
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs font-medium">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>Over-claimed by {panelTotalUsed - panelItem.quantity} unit{panelTotalUsed - panelItem.quantity !== 1 ? 's' : ''} — adjust quantities</span>
+                </div>
+              )}
+
+              {/* Remaining info */}
+              {!panelOverclaimed && panelRemaining > 0 && (
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border text-muted-foreground text-xs font-medium">
+                  <span>{panelRemaining} unit{panelRemaining !== 1 ? 's' : ''} still unclaimed on this item</span>
+                </div>
+              )}
+
               {/* Quantity stepper */}
               <div className="mb-4" data-vaul-no-drag>
                 <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Units to take</p>
@@ -753,31 +702,28 @@ const ClaimItems = () => {
                   <button
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); setPanelQty(Math.max(1, panelQty - 1)); }}
-                    disabled={panelQty <= 1}
-                    className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform disabled:opacity-30"
+                    onClick={(e) => { e.stopPropagation(); setPanelQty((q) => Math.max(0, q - 1)); }}
+                    className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform"
                   >
                     <Minus className="w-5 h-5" />
                   </button>
                   <input
                     type="number"
                     inputMode="numeric"
-                    min={1}
-                    max={panelMaxQty}
+                    min={0}
                     value={panelQty}
                     onPointerDown={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val)) setPanelQty(Math.max(1, Math.min(panelMaxQty, val)));
+                      if (!isNaN(val)) setPanelQty(Math.max(0, val));
                     }}
                     className="w-12 text-center text-lg font-bold text-foreground bg-transparent border border-border rounded-lg py-1 outline-none focus:ring-2 focus:ring-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <button
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); setPanelQty(Math.min(panelMaxQty, panelQty + 1)); }}
-                    disabled={panelQty >= panelMaxQty}
-                    className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform disabled:opacity-30"
+                    onClick={(e) => { e.stopPropagation(); setPanelQty((q) => q + 1); }}
+                    className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-foreground active:scale-95 transition-transform"
                   >
                     <Plus className="w-5 h-5" />
                   </button>
@@ -795,7 +741,7 @@ const ClaimItems = () => {
                 <div className="flex items-center gap-2 flex-wrap">
                   {people
                     .filter((p) => p.id !== panelPersonId)
-                    .map((person, pi) => {
+                    .map((person) => {
                       const isSelected = panelSharedWith.includes(person.id);
                       const originalIndex = people.findIndex((p) => p.id === person.id);
                       const avatarColor = AVATAR_COLORS[originalIndex % AVATAR_COLORS.length];
@@ -806,18 +752,6 @@ const ClaimItems = () => {
                             if (isSelected) {
                               setPanelSharedWith((prev) => prev.filter((id) => id !== person.id));
                             } else {
-                              // Check if adding a shared unit would exceed remaining
-                              const otherClaims = claims.filter(
-                                (c) => c.item_id === panelItemId && c.person_id !== panelPersonId
-                              );
-                              const otherUnits = otherClaims.reduce(
-                                (s, c) => s + c.quantity + (c.shared_with.length > 0 ? 1 : 0), 0
-                              );
-                              const wouldHaveShared = panelSharedWith.length === 0; // going from 0 shared to 1
-                              if (wouldHaveShared && panelQty + 1 + otherUnits > panelItem!.quantity) {
-                                // Need to decrease solo qty to make room
-                                setPanelQty(Math.max(1, panelItem!.quantity - otherUnits - 1));
-                              }
                               setPanelSharedWith((prev) => [...prev, person.id]);
                             }
                           }}
@@ -844,7 +778,7 @@ const ClaimItems = () => {
                 )}
               </div>
 
-              {/* Summary & confirm */}
+              {/* Summary */}
               <div className="bg-muted/50 rounded-xl p-3 mb-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Solo units</span>
@@ -857,7 +791,7 @@ const ClaimItems = () => {
                   </div>
                 )}
                 <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-border">
-                  <span className="text-foreground">{panelPerson.name}'s total</span>
+                  <span className="text-foreground">{panelPerson.name}'s total for this item</span>
                   <span className="text-foreground">
                     €{(
                       panelQty * panelItem.price +
@@ -867,9 +801,23 @@ const ClaimItems = () => {
                 </div>
               </div>
 
-              <Button onClick={confirmPanel} className="w-full h-12 rounded-xl text-base font-semibold">
-                Confirm
-              </Button>
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  variant="destructive"
+                  onClick={cancelAll}
+                  className="flex-1 h-12 rounded-xl text-base font-semibold gap-2"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Cancel all
+                </Button>
+                <Button
+                  onClick={confirmPanel}
+                  className="flex-1 h-12 rounded-xl text-base font-semibold"
+                >
+                  Confirm
+                </Button>
+              </div>
             </div>
           )}
         </DrawerContent>
