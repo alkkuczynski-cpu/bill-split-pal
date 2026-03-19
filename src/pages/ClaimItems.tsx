@@ -432,7 +432,42 @@ const ClaimItems = () => {
     return Array.from({ length: count }, (_, i) => ({ x: i * (avatarSize - overlap), y: 0 }));
   };
 
+  const isHost = !isGuest;
+  const guestCount = useMemo(() => people.filter((p) => !p.is_payer).length, [people]);
+
+  const shareSessionLink = async () => {
+    if (!sessionId) return;
+    const url = `${window.location.origin}/join?session=${sessionId}`;
+    if (navigator.share) {
+      try { await navigator.share({ text: `Join my SplitPal session: ${url}`, url }); } catch {}
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
+  const handleFinalise = async () => {
+    if (!sessionId) return;
+    // Lock the session
+    await supabase.from("sessions").update({ locked: true } as any).eq("id", sessionId);
+    setSessionLocked(true);
+    navigate(`/summary?session=${sessionId}`);
+  };
+
   const handleContinue = () => {
+    if (sessionType === "share_link" && isHost) {
+      // Show finalise dialog if there are unclaimed items or guests haven't finished
+      const unfinishedGuests = people.filter((p) => !p.is_payer).filter((p) => {
+        const total = personTotals[p.id];
+        return !total || total.items === 0;
+      }).length;
+      if (unfinishedGuests > 0 || !allClaimed) {
+        setShowFinaliseDialog(true);
+        return;
+      }
+      handleFinalise();
+      return;
+    }
     if (sessionId) {
       navigate(`/summary?session=${sessionId}`);
     } else {
