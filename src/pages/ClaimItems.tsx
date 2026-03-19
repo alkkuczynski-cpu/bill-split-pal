@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Crown, Check, Users, ChevronDown, ChevronUp,
-  Minus, Plus, AlertTriangle, Share2, XCircle,
+  Minus, Plus, AlertTriangle, XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -351,6 +351,41 @@ const ClaimItems = () => {
     return involved;
   };
 
+  // Compute fraction for a person on an item
+  const getPersonFraction = (personId: string, itemId: string) => {
+    const claim = claims.find((c) => c.item_id === itemId && c.person_id === personId);
+    let qty = claim?.quantity ?? 0;
+    let hasHalf = false;
+    if (claim && claim.shared_with.length > 0) hasHalf = true;
+    if (claims.some((c) => c.item_id === itemId && c.person_id !== personId && c.shared_with.includes(personId)))
+      hasHalf = true;
+    return { qty, hasHalf };
+  };
+
+  const formatFraction = (qty: number, hasHalf: boolean) => {
+    if (qty === 0 && hasHalf) return "½";
+    if (qty === 0 && !hasHalf) return "0";
+    if (hasHalf) return `${qty}½`;
+    return `${qty}`;
+  };
+
+  // SVG pie segment path
+  const pieSegmentPath = (index: number, total: number, radius: number) => {
+    if (total === 1) return `M 0 0 m -${radius} 0 a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 -${radius * 2} 0`;
+    const startAngle = (index / total) * 360 - 90;
+    const endAngle = ((index + 1) / total) * 360 - 90;
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+    const r = radius;
+    const cx = r, cy = r;
+    const x1 = cx + r * Math.cos(startRad);
+    const y1 = cy + r * Math.sin(startRad);
+    const x2 = cx + r * Math.cos(endRad);
+    const y2 = cy + r * Math.sin(endRad);
+    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+  };
+
   const handleContinue = () => {
     if (sessionId) {
       navigate(`/summary?session=${sessionId}`);
@@ -494,55 +529,168 @@ const ClaimItems = () => {
 
                   {/* Person avatars */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {people.map((person, pi) => {
-                      const claim = itemClaims.find((c) => c.person_id === person.id);
-                      const isClaimed = !!claim;
-                      const isSharedParticipant = !isClaimed && involved.has(person.id);
-                      const avatarColor = AVATAR_COLORS[pi % AVATAR_COLORS.length];
+                    {(() => {
+                      if (!isMultiUnit) {
+                        // Single-unit items: simple toggle avatars
+                        return people.map((person, pi) => {
+                          const claim = itemClaims.find((c) => c.person_id === person.id);
+                          const isClaimed = !!claim;
+                          const avatarColor = AVATAR_COLORS[pi % AVATAR_COLORS.length];
+                          return (
+                            <button
+                              key={person.id}
+                              onClick={() => handleAvatarClick(item.id, person.id)}
+                              onContextMenu={(e) => e.preventDefault()}
+                              className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
+                                isClaimed
+                                  ? "text-white shadow-sm"
+                                  : "bg-muted text-muted-foreground border border-border"
+                              }`}
+                              style={isClaimed ? { backgroundColor: avatarColor } : undefined}
+                            >
+                              {person.is_payer && (
+                                <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed ? "white" : "hsl(45, 85%, 50%)" }} />
+                              )}
+                              <span className="truncate max-w-[60px]">{person.name}</span>
+                              {isClaimed && <Check className="w-3 h-3 flex-shrink-0" />}
+                            </button>
+                          );
+                        });
+                      }
 
-                      return (
-                        <button
-                          key={person.id}
-                          onClick={() => handleAvatarClick(item.id, person.id)}
-                          onContextMenu={(e) => e.preventDefault()}
-                          className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
-                            isClaimed
-                              ? "text-white shadow-sm"
-                              : isSharedParticipant
-                              ? "text-white shadow-sm ring-2 ring-white/50"
-                              : "bg-muted text-muted-foreground border border-border"
-                          }`}
-                          style={
-                            isClaimed || isSharedParticipant
-                              ? { backgroundColor: avatarColor, opacity: isSharedParticipant ? 0.7 : 1 }
-                              : undefined
-                          }
-                        >
-                          {person.is_payer && (
-                            <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed || isSharedParticipant ? "white" : "hsl(45, 85%, 50%)" }} />
-                          )}
-                          <span className="truncate max-w-[60px]">{person.name}</span>
-                          {isClaimed && isMultiUnit && claim.quantity > 0 && (
-                            <span className="bg-white/30 rounded px-1 text-[10px] font-bold">{claim.quantity}{claim.shared_with.length > 0 ? '+' : ''}</span>
-                          )}
-                          {isClaimed && claim.shared_with.length > 0 && (
-                            <Share2 className="w-3 h-3 flex-shrink-0 opacity-80" />
-                          )}
-                          {isClaimed && !isMultiUnit && (
-                            <Check className="w-3 h-3 flex-shrink-0" />
-                          )}
-                          {isSharedParticipant && (
-                            <span className="text-[10px] opacity-80">½</span>
-                          )}
-                        </button>
-                      );
-                    })}
+                      // Multi-unit items: show share groups as merged bubbles + solo avatars with fractions
+                      const shareGroups: { ownerClaim: Claim; members: string[] }[] = [];
+                      const groupedPeople = new Set<string>();
+
+                      itemClaims.forEach((c) => {
+                        if (c.shared_with.length > 0) {
+                          const members = [c.person_id, ...c.shared_with];
+                          shareGroups.push({ ownerClaim: c, members });
+                          members.forEach((pid) => groupedPeople.add(pid));
+                        }
+                      });
+
+                      const elements: React.ReactNode[] = [];
+
+                      // Render ungrouped people (solo claims + unclaimed)
+                      people.forEach((person, pi) => {
+                        if (groupedPeople.has(person.id)) return;
+                        const claim = itemClaims.find((c) => c.person_id === person.id);
+                        const isClaimed = !!claim;
+                        const avatarColor = AVATAR_COLORS[pi % AVATAR_COLORS.length];
+                        const frac = getPersonFraction(person.id, item.id);
+
+                        elements.push(
+                          <button
+                            key={person.id}
+                            onClick={() => handleAvatarClick(item.id, person.id)}
+                            onContextMenu={(e) => e.preventDefault()}
+                            className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 select-none ${
+                              isClaimed
+                                ? "text-white shadow-sm"
+                                : "bg-muted text-muted-foreground border border-border"
+                            }`}
+                            style={isClaimed ? { backgroundColor: avatarColor } : undefined}
+                          >
+                            {person.is_payer && (
+                              <Crown className="w-3 h-3 flex-shrink-0" style={{ color: isClaimed ? "white" : "hsl(45, 85%, 50%)" }} />
+                            )}
+                            <span className="truncate max-w-[60px]">{person.name}</span>
+                            {isClaimed && (
+                              <span className="text-[10px] font-bold opacity-90">{formatFraction(frac.qty, frac.hasHalf)}</span>
+                            )}
+                          </button>
+                        );
+                      });
+
+                      // Render share group merged bubbles
+                      shareGroups.forEach((group, gi) => {
+                        const size = 36;
+                        const r = size / 2;
+                        const n = group.members.length;
+
+                        elements.push(
+                          <div key={`share-${gi}`} className="flex items-center gap-1.5">
+                            <div
+                              className="relative cursor-pointer active:scale-95 transition-transform"
+                              onClick={() => handleAvatarClick(item.id, group.ownerClaim.person_id)}
+                              style={{ width: size, height: size }}
+                            >
+                              <svg width={size} height={size} className="rounded-full overflow-hidden" viewBox={`0 0 ${size} ${size}`}>
+                                {group.members.map((pid, i) => {
+                                  const pIndex = people.findIndex((p) => p.id === pid);
+                                  const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
+                                  if (n === 1) {
+                                    return <circle key={pid} cx={r} cy={r} r={r} fill={color} />;
+                                  }
+                                  return <path key={pid} d={pieSegmentPath(i, n, r)} fill={color} />;
+                                })}
+                                {/* Thin divider lines */}
+                                {n > 1 && group.members.map((_, i) => {
+                                  const angle = (i / n) * 360 - 90;
+                                  const rad = (angle * Math.PI) / 180;
+                                  return (
+                                    <line
+                                      key={`line-${i}`}
+                                      x1={r} y1={r}
+                                      x2={r + r * Math.cos(rad)}
+                                      y2={r + r * Math.sin(rad)}
+                                      stroke="white" strokeWidth="1.5"
+                                    />
+                                  );
+                                })}
+                                {/* Initials in each segment */}
+                                {group.members.map((pid, i) => {
+                                  const person = people.find((p) => p.id === pid);
+                                  const midAngle = ((i + 0.5) / n) * 360 - 90;
+                                  const midRad = (midAngle * Math.PI) / 180;
+                                  const dist = r * (n === 2 ? 0.45 : 0.55);
+                                  const cx = r + dist * Math.cos(midRad);
+                                  const cy = r + dist * Math.sin(midRad);
+                                  const fontSize = n <= 2 ? 9 : 7;
+                                  return (
+                                    <text
+                                      key={`t-${pid}`}
+                                      x={cx} y={cy}
+                                      textAnchor="middle"
+                                      dominantBaseline="central"
+                                      fill="white"
+                                      fontSize={fontSize}
+                                      fontWeight="bold"
+                                      style={{ pointerEvents: "none" }}
+                                    >
+                                      {person ? getInitials(person.name) : "?"}
+                                    </text>
+                                  );
+                                })}
+                              </svg>
+                            </div>
+                            {/* Fractions for each member */}
+                            <div className="flex flex-col gap-0">
+                              {group.members.map((pid) => {
+                                const person = people.find((p) => p.id === pid);
+                                const pIndex = people.findIndex((p) => p.id === pid);
+                                const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
+                                const frac = getPersonFraction(pid, item.id);
+                                return (
+                                  <span key={pid} className="text-[10px] font-bold leading-tight" style={{ color }}>
+                                    {person?.name?.split(" ")[0]}: {formatFraction(frac.qty, frac.hasHalf)}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+
+                      return elements;
+                    })()}
                   </div>
 
                   {/* Split info & warnings */}
                   {(itemClaims.length > 0 || involved.size > 0) && (
                     <div className="mt-2 space-y-0.5">
-                      {info?.overClaimed && (
+                      {isMultiUnit && info?.overClaimed && (
                         <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
                           Over-claimed by {info.totalUnits - item.quantity} unit{info.totalUnits - item.quantity !== 1 ? "s" : ""}
