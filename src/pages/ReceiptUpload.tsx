@@ -41,6 +41,8 @@ const ReceiptUpload = () => {
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editQuantity, setEditQuantity] = useState(1);
+  const [editingQtyInline, setEditingQtyInline] = useState<string | null>(null);
+  const [inlineQtyValue, setInlineQtyValue] = useState("");
   const [tipValue, setTipValue] = useState("");
   const [tipMode, setTipMode] = useState<"percent" | "flat">("percent");
   const [noTipActive, setNoTipActive] = useState(false);
@@ -137,7 +139,7 @@ const ReceiptUpload = () => {
     const newItem: LineItem = {
       id: `item-new-${Date.now()}`,
       name: "",
-      price: 0,
+      price: 0.00,
       quantity: 1,
       color: ITEM_COLORS[items.length % ITEM_COLORS.length],
     };
@@ -311,6 +313,7 @@ const ReceiptUpload = () => {
                             ref={newItemRef}
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Item name"
                             className="w-full bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                           />
                           <div className="flex items-center gap-2">
@@ -323,9 +326,28 @@ const ReceiptUpload = () => {
                                 >
                                   −
                                 </button>
-                                <span className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background">
-                                  {editQuantity}
-                                </span>
+                                {editingQtyInline === editingId ? (
+                                  <input
+                                    value={inlineQtyValue}
+                                    onChange={(e) => setInlineQtyValue(e.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => {
+                                      const v = parseInt(inlineQtyValue, 10);
+                                      setEditQuantity(v >= 1 ? v : 1);
+                                      setEditingQtyInline(null);
+                                    }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                    inputMode="numeric"
+                                    autoFocus
+                                    className="w-10 h-8 text-center text-sm font-medium text-foreground bg-background border-x border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => { setEditingQtyInline(editingId); setInlineQtyValue(String(editQuantity)); }}
+                                    className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background cursor-text"
+                                  >
+                                    {editQuantity}
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setEditQuantity(editQuantity + 1)}
                                   className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
