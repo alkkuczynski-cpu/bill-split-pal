@@ -171,6 +171,7 @@ const ReceiptUpload = () => {
         console.error("Session create error:", sessionError);
         // Fallback to local mode
         sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+        sessionStorage.setItem("splitpal_receipt_image", preview || "");
         navigate("/claim");
         return;
       }
