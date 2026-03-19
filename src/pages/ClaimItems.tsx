@@ -876,21 +876,57 @@ const ClaimItems = () => {
         </div>
       </div>
 
-      {/* Continue button */}
-      <div className="px-4 pb-8">
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={handleContinue}
-          disabled={!allClaimed}
-          className={`w-full h-14 rounded-2xl font-display font-semibold text-lg transition-all flex items-center justify-center gap-2 ${
-            allClaimed
-              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {allClaimed ? "Continue" : `Claim all ${items.length - fullyClaimedCount} remaining`}
-        </motion.button>
-      </div>
+      {/* Continue / Finalise button */}
+      {!sessionLocked && (
+        <div className="px-4 pb-8">
+          {sessionType === "share_link" && isHost ? (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={handleContinue}
+              className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-display font-semibold text-lg shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+            >
+              Finalise & generate links
+            </motion.button>
+          ) : (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={handleContinue}
+              disabled={!allClaimed}
+              className={`w-full h-14 rounded-2xl font-display font-semibold text-lg transition-all flex items-center justify-center gap-2 ${
+                allClaimed
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {allClaimed ? "Continue" : `Claim all ${items.length - fullyClaimedCount} remaining`}
+            </motion.button>
+          )}
+        </div>
+      )}
+
+      {/* Finalise confirmation dialog */}
+      <AlertDialog open={showFinaliseDialog} onOpenChange={setShowFinaliseDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Finalise the bill?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const unfinished = people.filter((p) => !p.is_payer).filter((p) => {
+                  const total = personTotals[p.id];
+                  return !total || total.items === 0;
+                }).length;
+                if (unfinished > 0) return `${unfinished} guest${unfinished !== 1 ? "s" : ""} haven't finished claiming — continue anyway?`;
+                if (!allClaimed) return "Some items are still unclaimed — continue anyway?";
+                return "This will lock the session and generate payment links.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go back</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFinalise}>Finalise</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Assignment Panel Drawer — multi-unit items only */}
       <Drawer open={panelOpen} onOpenChange={setPanelOpen}>
