@@ -308,29 +308,38 @@ const ReceiptUpload = () => {
                       <>
                         <div className="flex-1 flex flex-col gap-2">
                           <input
+                            ref={newItemRef}
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             className="w-full bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                            placeholder="Item name"
                           />
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground">Qty</span>
-                              <input
-                                value={editQuantity}
-                                onChange={(e) => setEditQuantity(e.target.value)}
-                                type="number"
-                                min="1"
-                                className="w-14 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                              />
+                              <div className="flex items-center rounded-lg border border-border overflow-hidden">
+                                <button
+                                  onClick={() => setEditQuantity(Math.max(1, editQuantity - 1))}
+                                  className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
+                                >
+                                  −
+                                </button>
+                                <span className="w-8 h-8 flex items-center justify-center text-sm font-medium text-foreground bg-background">
+                                  {editQuantity}
+                                </span>
+                                <button
+                                  onClick={() => setEditQuantity(editQuantity + 1)}
+                                  className="w-8 h-8 flex items-center justify-center bg-muted text-foreground active:bg-primary/10 transition-colors"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground">€</span>
                               <input
                                 value={editPrice}
                                 onChange={(e) => setEditPrice(e.target.value)}
-                                type="number"
-                                step="0.01"
+                                inputMode="decimal"
                                 className="w-20 bg-muted rounded-lg px-2 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                                 placeholder="0.00"
                               />
