@@ -171,6 +171,7 @@ const ReceiptUpload = () => {
         console.error("Session create error:", sessionError);
         // Fallback to local mode
         sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+        sessionStorage.setItem("splitpal_receipt_image", preview || "");
         navigate("/claim");
         return;
       }
@@ -197,10 +198,12 @@ const ReceiptUpload = () => {
       }));
       await supabase.from("session_items").insert(itemsToInsert);
 
+      sessionStorage.setItem("splitpal_receipt_image", preview || "");
       navigate(`/claim?session=${sessionId}`);
     } catch (err) {
       console.error("Error saving session:", err);
       sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+      sessionStorage.setItem("splitpal_receipt_image", preview || "");
       navigate("/claim");
     }
   };

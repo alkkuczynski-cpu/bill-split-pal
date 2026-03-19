@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Crown, Check, Users } from "lucide-react";
+import { ArrowLeft, Crown, Check, Users, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -48,11 +48,15 @@ const ClaimItems = () => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [tipAmount, setTipAmount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [receiptImage, setReceiptImage] = useState<string | null>(null);
+  const [receiptExpanded, setReceiptExpanded] = useState(false);
 
   // Load session data
   useEffect(() => {
+    const storedImage = sessionStorage.getItem("splitpal_receipt_image");
+    if (storedImage) setReceiptImage(storedImage);
+
     if (!sessionId) {
-      // Fallback: try sessionStorage for local dev
       const stored = sessionStorage.getItem("splitpal_items");
       const sessionData = sessionStorage.getItem("splitpal_session");
       if (stored && sessionData) {
@@ -105,7 +109,7 @@ const ClaimItems = () => {
     fetchData();
   }, [sessionId, navigate]);
 
-  // Realtime subscription for claims
+  // Realtime subscription for claims (for OTHER users' changes)
   useEffect(() => {
     if (!sessionId) return;
 
@@ -121,7 +125,16 @@ const ClaimItems = () => {
         },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            setClaims((prev) => [...prev, payload.new as Claim]);
+            const newClaim = payload.new as Claim;
+            setClaims((prev) => {
+              // Avoid duplicates (optimistic insert already added it)
+              if (prev.some((c) => c.id === newClaim.id)) return prev;
+              // Remove any temp claim for same item+person
+              const filtered = prev.filter(
+                (c) => !(c.id.startsWith("temp-") && c.item_id === newClaim.item_id && c.person_id === newClaim.person_id)
+              );
+              return [...filtered, newClaim];
+            });
           } else if (payload.eventType === "DELETE") {
             setClaims((prev) => prev.filter((c) => c.id !== payload.old.id));
           }
@@ -140,15 +153,32 @@ const ClaimItems = () => {
     );
 
     if (sessionId) {
-      // DB mode
       if (existing) {
-        await supabase.from("item_claims").delete().eq("id", existing.id);
+        // Optimistic delete
+        setClaims((prev) => prev.filter((c) => c.id !== existing.id));
+        const { error } = await supabase.from("item_claims").delete().eq("id", existing.id);
+        if (error) {
+          setClaims((prev) => [...prev, existing]);
+        }
       } else {
-        await supabase.from("item_claims").insert({
-          session_id: sessionId,
-          item_id: itemId,
-          person_id: personId,
-        });
+        // Optimistic insert with temp id
+        const tempId = `temp-${Date.now()}-${Math.random()}`;
+        const optimisticClaim: Claim = { id: tempId, item_id: itemId, person_id: personId };
+        setClaims((prev) => [...prev, optimisticClaim]);
+        const { data, error } = await supabase
+          .from("item_claims")
+          .insert({ session_id: sessionId, item_id: itemId, person_id: personId })
+          .select()
+          .single();
+        if (error) {
+          setClaims((prev) => prev.filter((c) => c.id !== tempId));
+        } else if (data) {
+          setClaims((prev) =>
+            prev.map((c) =>
+              c.id === tempId ? { id: data.id, item_id: data.item_id, person_id: data.person_id } : c
+            )
+          );
+        }
       }
     } else {
       // Local mode
@@ -241,6 +271,42 @@ const ClaimItems = () => {
           <p className="text-sm text-muted-foreground">Tap your avatar to claim what you ordered</p>
         </div>
       </div>
+
+      {/* Receipt photo collapsible */}
+      {receiptImage && (
+        <div className="px-4 py-2">
+          <button
+            onClick={() => setReceiptExpanded(!receiptExpanded)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-card border border-border text-sm font-medium text-foreground"
+          >
+            <span>📷 Receipt Photo</span>
+            {receiptExpanded ? (
+              <ChevronUp className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+          <AnimatePresence>
+            {receiptExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2 rounded-xl border border-border overflow-hidden max-h-80 overflow-y-auto">
+                  <img
+                    src={receiptImage}
+                    alt="Receipt"
+                    className="w-full object-contain"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Progress banner */}
       <div className="px-4 py-2">
