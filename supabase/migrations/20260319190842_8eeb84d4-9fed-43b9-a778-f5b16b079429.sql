@@ -1,0 +1,1 @@
+ALTER TABLE public.item_claims ADD COLUMN quantity integer NOT NULL DEFAULT 1;
