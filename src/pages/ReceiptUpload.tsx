@@ -139,7 +139,7 @@ const ReceiptUpload = () => {
     const newItem: LineItem = {
       id: `item-new-${Date.now()}`,
       name: "",
-      price: 0,
+      price: 0.00,
       quantity: 1,
       color: ITEM_COLORS[items.length % ITEM_COLORS.length],
     };
