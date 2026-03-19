@@ -659,37 +659,40 @@ const ClaimItems = () => {
                           Over-claimed by {info.totalUnits - item.quantity} unit{info.totalUnits - item.quantity !== 1 ? "s" : ""}
                         </p>
                       )}
-                      {isMultiUnit && itemClaims.length > 0 && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                          {itemClaims.map((c) => {
-                            const person = people.find((p) => p.id === c.person_id);
-                            const soloCost = item.price * c.quantity;
-                            const sharedCost = c.shared_with.length > 0 ? item.price / (1 + c.shared_with.length) : 0;
-                            const totalCost = soloCost + sharedCost;
-                            const parts: string[] = [];
-                            if (c.quantity > 0) parts.push(`${c.quantity}×`);
-                            if (c.shared_with.length > 0) parts.push(`split 1`);
-                            return (
-                              <p key={c.id} className="text-xs text-muted-foreground">
-                                {person?.name}: {parts.join(' + ')} = €{totalCost.toFixed(2)}
-                              </p>
-                            );
-                          })}
-                          {/* Shared participants without their own claim */}
-                          {itemClaims.filter((c) => c.shared_with.length > 0).map((c) =>
-                            c.shared_with
-                              .filter((pid) => !itemClaims.some((cl) => cl.person_id === pid))
-                              .map((pid) => {
-                                const person = people.find((p) => p.id === pid);
-                                const cost = item.price / (1 + c.shared_with.length);
-                                return (
-                                  <p key={`shared-${c.id}-${pid}`} className="text-xs text-muted-foreground">
-                                    {person?.name}: split = €{cost.toFixed(2)}
-                                  </p>
-                                );
-                              })
-                          )}
-                        </div>
+                      {isMultiUnit && itemClaims.length > 0 && (() => {
+                        // Build per-person totals for this item
+                        const personCosts: Record<string, { solo: number; splitShare: number }> = {};
+                        itemClaims.forEach((c) => {
+                          if (!personCosts[c.person_id]) personCosts[c.person_id] = { solo: 0, splitShare: 0 };
+                          personCosts[c.person_id].solo += item.price * c.quantity;
+                          if (c.shared_with.length > 0) {
+                            const share = item.price / (1 + c.shared_with.length);
+                            personCosts[c.person_id].splitShare += share;
+                            c.shared_with.forEach((pid) => {
+                              if (!personCosts[pid]) personCosts[pid] = { solo: 0, splitShare: 0 };
+                              personCosts[pid].splitShare += share;
+                            });
+                          }
+                        });
+                        return (
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                            {Object.entries(personCosts).map(([pid, costs]) => {
+                              const person = people.find((p) => p.id === pid);
+                              if (!person) return null;
+                              const total = costs.solo + costs.splitShare;
+                              const parts: string[] = [];
+                              const ownClaim = itemClaims.find((c) => c.person_id === pid);
+                              if (ownClaim && ownClaim.quantity > 0) parts.push(`${ownClaim.quantity}×`);
+                              if (costs.splitShare > 0) parts.push('split');
+                              return (
+                                <p key={`breakdown-${pid}`} className="text-xs text-muted-foreground">
+                                  {person.name}: {parts.join(' + ')} = €{total.toFixed(2)}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       )}
                       {!isMultiUnit && itemClaims.length > 1 && (
                         <p className="text-xs text-muted-foreground">
