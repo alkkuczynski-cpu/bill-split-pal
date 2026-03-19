@@ -32,6 +32,9 @@ const ITEM_COLORS = [
 
 const ReceiptUpload = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isShareLink = searchParams.get("type") === "share_link";
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
