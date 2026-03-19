@@ -66,6 +66,30 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          revolut_username: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          revolut_username?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          revolut_username?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       session_items: {
         Row: {
           color: string
@@ -111,6 +135,7 @@ export type Database = {
           name: string
           session_id: string
           sort_order: number
+          user_id: string | null
         }
         Insert: {
           id?: string
@@ -118,6 +143,7 @@ export type Database = {
           name: string
           session_id: string
           sort_order?: number
+          user_id?: string | null
         }
         Update: {
           id?: string
@@ -125,6 +151,7 @@ export type Database = {
           name?: string
           session_id?: string
           sort_order?: number
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -139,20 +166,29 @@ export type Database = {
       sessions: {
         Row: {
           created_at: string
+          host_user_id: string | null
           id: string
+          locked: boolean
           mode: string
+          session_type: string
           tip_amount: number
         }
         Insert: {
           created_at?: string
+          host_user_id?: string | null
           id?: string
+          locked?: boolean
           mode?: string
+          session_type?: string
           tip_amount?: number
         }
         Update: {
           created_at?: string
+          host_user_id?: string | null
           id?: string
+          locked?: boolean
           mode?: string
+          session_type?: string
           tip_amount?: number
         }
         Relationships: []
