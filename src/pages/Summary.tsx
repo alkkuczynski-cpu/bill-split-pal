@@ -305,7 +305,7 @@ const Summary = () => {
           if (!data) return null;
           const pIndex = people.findIndex((p) => p.id === person.id);
           const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-          const revolutLink = `https://revolut.me/${REVOLUT_USERNAME}/${data.total.toFixed(2)}`;
+          const revolutLink = revolutUsername ? `https://revolut.me/${revolutUsername}/${data.total.toFixed(2)}` : null;
 
           return (
             <motion.div
