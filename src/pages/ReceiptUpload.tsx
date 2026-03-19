@@ -313,6 +313,7 @@ const ReceiptUpload = () => {
                             ref={newItemRef}
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Item name"
                             className="w-full bg-muted rounded-lg px-3 py-1.5 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                           />
                           <div className="flex items-center gap-2">
