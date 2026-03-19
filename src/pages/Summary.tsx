@@ -5,6 +5,7 @@ import {
   ArrowLeft, Check, Crown, ExternalLink, Share2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Person {
   id: string;
@@ -41,18 +42,18 @@ const AVATAR_COLORS = [
   "hsl(100, 50%, 42%)",
 ];
 
-const REVOLUT_USERNAME = "payerUsername"; // placeholder
-
 const Summary = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
+  const { profile } = useAuth();
 
   const [people, setPeople] = useState<Person[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [tipAmount, setTipAmount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [revolutUsername, setRevolutUsername] = useState("");
 
   const parseSharedWith = (val: any): string[] => {
     if (Array.isArray(val)) return val;
