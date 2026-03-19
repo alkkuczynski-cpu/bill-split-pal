@@ -40,10 +40,12 @@ const ReceiptUpload = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
+  const [editQuantity, setEditQuantity] = useState(1);
   const [tipValue, setTipValue] = useState("");
   const [tipMode, setTipMode] = useState<"percent" | "flat">("percent");
+  const [noTipActive, setNoTipActive] = useState(false);
   const [receiptExpanded, setReceiptExpanded] = useState(false);
+  const newItemRef = useRef<HTMLInputElement>(null);
 
   const session = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
   const isNight = session.mode === "night";
