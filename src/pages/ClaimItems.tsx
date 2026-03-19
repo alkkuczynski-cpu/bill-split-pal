@@ -610,67 +610,42 @@ const ClaimItems = () => {
                         );
                       });
 
-                      // Render share group merged bubbles
+                      // Render share group Venn-diagram bubbles
                       shareGroups.forEach((group, gi) => {
-                        const size = 36;
-                        const r = size / 2;
-                        const n = group.members.length;
+                        const avatarSize = 32;
+                        const positions = vennPositions(group.members.length, avatarSize);
+                        const maxX = Math.max(...positions.map((p) => p.x)) + avatarSize;
+                        const maxY = Math.max(...positions.map((p) => p.y)) + avatarSize;
 
                         elements.push(
                           <div key={`share-${gi}`} className="flex items-center gap-1.5">
                             <div
                               className="relative cursor-pointer active:scale-95 transition-transform"
                               onClick={() => handleAvatarClick(item.id, group.ownerClaim.person_id)}
-                              style={{ width: size, height: size }}
+                              style={{ width: maxX, height: maxY }}
                             >
-                              <svg width={size} height={size} className="rounded-full overflow-hidden" viewBox={`0 0 ${size} ${size}`}>
-                                {group.members.map((pid, i) => {
-                                  const pIndex = people.findIndex((p) => p.id === pid);
-                                  const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-                                  if (n === 1) {
-                                    return <circle key={pid} cx={r} cy={r} r={r} fill={color} />;
-                                  }
-                                  return <path key={pid} d={pieSegmentPath(i, n, r)} fill={color} />;
-                                })}
-                                {/* Thin divider lines */}
-                                {n > 1 && group.members.map((_, i) => {
-                                  const angle = (i / n) * 360 - 90;
-                                  const rad = (angle * Math.PI) / 180;
-                                  return (
-                                    <line
-                                      key={`line-${i}`}
-                                      x1={r} y1={r}
-                                      x2={r + r * Math.cos(rad)}
-                                      y2={r + r * Math.sin(rad)}
-                                      stroke="white" strokeWidth="1.5"
-                                    />
-                                  );
-                                })}
-                                {/* Initials in each segment */}
-                                {group.members.map((pid, i) => {
-                                  const person = people.find((p) => p.id === pid);
-                                  const midAngle = ((i + 0.5) / n) * 360 - 90;
-                                  const midRad = (midAngle * Math.PI) / 180;
-                                  const dist = r * (n === 2 ? 0.45 : 0.55);
-                                  const cx = r + dist * Math.cos(midRad);
-                                  const cy = r + dist * Math.sin(midRad);
-                                  const fontSize = n <= 2 ? 9 : 7;
-                                  return (
-                                    <text
-                                      key={`t-${pid}`}
-                                      x={cx} y={cy}
-                                      textAnchor="middle"
-                                      dominantBaseline="central"
-                                      fill="white"
-                                      fontSize={fontSize}
-                                      fontWeight="bold"
-                                      style={{ pointerEvents: "none" }}
-                                    >
-                                      {person ? getInitials(person.name) : "?"}
-                                    </text>
-                                  );
-                                })}
-                              </svg>
+                              {group.members.map((pid, i) => {
+                                const pIndex = people.findIndex((p) => p.id === pid);
+                                const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
+                                const person = people.find((p) => p.id === pid);
+                                const pos = positions[i];
+                                return (
+                                  <div
+                                    key={pid}
+                                    className="absolute rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-card"
+                                    style={{
+                                      width: avatarSize,
+                                      height: avatarSize,
+                                      left: pos.x,
+                                      top: pos.y,
+                                      backgroundColor: color,
+                                      zIndex: i + 1,
+                                    }}
+                                  >
+                                    {person ? getInitials(person.name) : "?"}
+                                  </div>
+                                );
+                              })}
                             </div>
                             {/* Fractions for each member */}
                             <div className="flex flex-col gap-0">
