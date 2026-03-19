@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import SessionSetup from "./pages/SessionSetup.tsx";
 import ReceiptUpload from "./pages/ReceiptUpload.tsx";
+import ClaimItems from "./pages/ClaimItems.tsx";
+import Summary from "./pages/Summary.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -20,6 +22,8 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/setup" element={<SessionSetup />} />
           <Route path="/upload" element={<ReceiptUpload />} />
+          <Route path="/claim" element={<ClaimItems />} />
+          <Route path="/summary" element={<Summary />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

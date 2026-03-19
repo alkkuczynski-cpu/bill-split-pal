@@ -14,7 +14,143 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      item_claims: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          person_id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          person_id: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          person_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "item_claims_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "session_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "item_claims_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "session_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "item_claims_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_items: {
+        Row: {
+          color: string
+          id: string
+          name: string
+          price: number
+          quantity: number
+          session_id: string
+          sort_order: number
+        }
+        Insert: {
+          color?: string
+          id?: string
+          name: string
+          price?: number
+          quantity?: number
+          session_id: string
+          sort_order?: number
+        }
+        Update: {
+          color?: string
+          id?: string
+          name?: string
+          price?: number
+          quantity?: number
+          session_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_items_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_people: {
+        Row: {
+          id: string
+          is_payer: boolean
+          name: string
+          session_id: string
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          is_payer?: boolean
+          name: string
+          session_id: string
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          is_payer?: boolean
+          name?: string
+          session_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_people_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string
+          tip_amount: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode?: string
+          tip_amount?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string
+          tip_amount?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
