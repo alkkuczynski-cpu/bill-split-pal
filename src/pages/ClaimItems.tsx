@@ -133,6 +133,8 @@ const ClaimItems = () => {
         return;
       }
       setTipAmount(Number(sessionRes.data.tip_amount) || 0);
+      setSessionType((sessionRes.data as any).session_type || "pass_phone");
+      setSessionLocked((sessionRes.data as any).locked || false);
       setPeople((peopleRes.data || []) as Person[]);
       setItems((itemsRes.data || []) as Item[]);
       setClaims((claimsRes.data || []).map(claimFromRow));
