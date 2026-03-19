@@ -693,7 +693,6 @@ const ClaimItems = () => {
                           </div>
                         );
                       })()}
-                      )}
                       {!isMultiUnit && itemClaims.length > 1 && (
                         <p className="text-xs text-muted-foreground">
                           Split {itemClaims.length} ways · €{(item.price / itemClaims.length).toFixed(2)} each
