@@ -505,6 +505,24 @@ const ClaimItems = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Finalised banner for guests */}
+      {finalisedBanner && (
+        <motion.div
+          initial={{ y: -60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="sticky top-0 z-50 bg-primary text-primary-foreground px-4 py-3 text-center font-display font-semibold"
+        >
+          🎉 The bill has been finalised! Redirecting to your summary...
+        </motion.div>
+      )}
+
+      {/* Session locked banner */}
+      {sessionLocked && !finalisedBanner && (
+        <div className="sticky top-0 z-50 bg-muted border-b border-border px-4 py-3 flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground">
+          <Lock className="w-4 h-4" /> This session is locked — no more changes allowed
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-6 pb-2">
         {!sessionId && (
@@ -515,11 +533,28 @@ const ClaimItems = () => {
             <ArrowLeft className="w-5 h-5 text-foreground" />
           </button>
         )}
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-display font-bold text-foreground">Claim Items</h1>
           <p className="text-sm text-muted-foreground">Tap to claim · Tap again for details</p>
         </div>
       </div>
+
+      {/* Share link banner (share_link mode) */}
+      {sessionType === "share_link" && isHost && sessionId && (
+        <div className="px-4 py-2">
+          <button
+            onClick={shareSessionLink}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-sm"
+          >
+            <Link2 className="w-5 h-5 text-primary flex-shrink-0" />
+            <div className="flex-1 text-left">
+              <p className="font-display font-semibold text-foreground">Share session link</p>
+              <p className="text-xs text-muted-foreground">{guestCount} guest{guestCount !== 1 ? "s" : ""} joined</p>
+            </div>
+            <Share2 className="w-4 h-4 text-primary" />
+          </button>
+        </div>
+      )}
 
       {/* Receipt photo collapsible */}
       {receiptImage && (
