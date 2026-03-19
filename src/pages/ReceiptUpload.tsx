@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Trash2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 interface LineItem {
@@ -31,6 +32,9 @@ const ITEM_COLORS = [
 
 const ReceiptUpload = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isShareLink = searchParams.get("type") === "share_link";
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -158,18 +162,23 @@ const ReceiptUpload = () => {
 
   const handleContinue = async () => {
     const sessionData = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
+    const sessionType = isShareLink ? "share_link" : "pass_phone";
 
     try {
       // Create session in DB
       const { data: sessionRow, error: sessionError } = await supabase
         .from("sessions")
-        .insert({ mode: sessionData.mode || "bill", tip_amount: tipAmount })
+        .insert({
+          mode: sessionData.mode || "bill",
+          tip_amount: tipAmount,
+          session_type: sessionType,
+          host_user_id: user?.id || null,
+        } as any)
         .select()
         .single();
 
       if (sessionError || !sessionRow) {
         console.error("Session create error:", sessionError);
-        // Fallback to local mode
         sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
         sessionStorage.setItem("splitpal_receipt_image", preview || "");
         navigate("/claim");
@@ -178,14 +187,34 @@ const ReceiptUpload = () => {
 
       const sessionId = sessionRow.id;
 
-      // Insert people
-      const peopleToInsert = (sessionData.people || []).map((p: any, i: number) => ({
-        session_id: sessionId,
-        name: p.name,
-        is_payer: p.isPayer || false,
-        sort_order: i,
-      }));
-      await supabase.from("session_people").insert(peopleToInsert);
+      if (isShareLink) {
+        // In share_link mode, add the host as payer
+        const { data: hostProfile } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("user_id", user!.id)
+          .single();
+        const hostName = (hostProfile as any)?.display_name || "Host";
+
+        await supabase.from("session_people").insert({
+          session_id: sessionId,
+          name: hostName,
+          is_payer: true,
+          sort_order: 0,
+          user_id: user!.id,
+        } as any);
+      } else {
+        // Pass phone mode: insert all people
+        const peopleToInsert = (sessionData.people || []).map((p: any, i: number) => ({
+          session_id: sessionId,
+          name: p.name,
+          is_payer: p.isPayer || false,
+          sort_order: i,
+        }));
+        if (peopleToInsert.length > 0) {
+          await supabase.from("session_people").insert(peopleToInsert);
+        }
+      }
 
       // Insert items
       const itemsToInsert = items.map((item, i) => ({

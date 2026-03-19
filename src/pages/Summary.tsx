@@ -5,6 +5,7 @@ import {
   ArrowLeft, Check, Crown, ExternalLink, Share2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Person {
   id: string;
@@ -41,18 +42,18 @@ const AVATAR_COLORS = [
   "hsl(100, 50%, 42%)",
 ];
 
-const REVOLUT_USERNAME = "payerUsername"; // placeholder
-
 const Summary = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
+  const { profile } = useAuth();
 
   const [people, setPeople] = useState<Person[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [tipAmount, setTipAmount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [revolutUsername, setRevolutUsername] = useState("");
 
   const parseSharedWith = (val: any): string[] => {
     if (Array.isArray(val)) return val;
@@ -71,7 +72,21 @@ const Summary = () => {
           supabase.from("session_items").select("*").eq("session_id", sessionId).order("sort_order"),
           supabase.from("item_claims").select("*").eq("session_id", sessionId),
         ]);
-        if (sessionRes.data) setTipAmount(sessionRes.data.tip_amount ?? 0);
+        if (sessionRes.data) {
+          setTipAmount(sessionRes.data.tip_amount ?? 0);
+          // Fetch host's revolut username
+          const hostUserId = (sessionRes.data as any).host_user_id;
+          if (hostUserId) {
+            const { data: hostProfile } = await supabase
+              .from("profiles")
+              .select("revolut_username")
+              .eq("user_id", hostUserId)
+              .single();
+            if (hostProfile) setRevolutUsername((hostProfile as any).revolut_username || "");
+          }
+        }
+        // Use profile's revolut username as fallback
+        if (profile?.revolut_username) setRevolutUsername((prev) => prev || profile.revolut_username);
         if (peopleRes.data) setPeople(peopleRes.data);
         if (itemsRes.data) setItems(itemsRes.data as Item[]);
         if (claimsRes.data) {
@@ -290,7 +305,7 @@ const Summary = () => {
           if (!data) return null;
           const pIndex = people.findIndex((p) => p.id === person.id);
           const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-          const revolutLink = `https://revolut.me/${REVOLUT_USERNAME}/${data.total.toFixed(2)}`;
+          const revolutLink = revolutUsername ? `https://revolut.me/${revolutUsername}/${data.total.toFixed(2)}` : null;
 
           return (
             <motion.div
@@ -333,15 +348,17 @@ const Summary = () => {
               </div>
 
               {/* Revolut button */}
-              <a
-                href={revolutLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
-              >
-                Request €{data.total.toFixed(2)} on Revolut
-                <ExternalLink className="w-4 h-4" />
-              </a>
+              {revolutLink && (
+                <a
+                  href={revolutLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                >
+                  Request €{data.total.toFixed(2)} on Revolut
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
             </motion.div>
           );
         })}

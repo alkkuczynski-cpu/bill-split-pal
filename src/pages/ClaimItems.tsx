@@ -1,16 +1,21 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Crown, Check, Users, ChevronDown, ChevronUp,
-  Minus, Plus, AlertTriangle, XCircle,
+  Minus, Plus, AlertTriangle, XCircle, Share2, Link2, Lock,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle,
 } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Person {
   id: string;
@@ -51,6 +56,8 @@ const ClaimItems = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
+  const isGuest = searchParams.get("guest") === "true";
+  const { user } = useAuth();
 
   const [people, setPeople] = useState<Person[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -59,6 +66,10 @@ const ClaimItems = () => {
   const [loading, setLoading] = useState(true);
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [receiptExpanded, setReceiptExpanded] = useState(false);
+  const [sessionType, setSessionType] = useState<string>("pass_phone");
+  const [sessionLocked, setSessionLocked] = useState(false);
+  const [showFinaliseDialog, setShowFinaliseDialog] = useState(false);
+  const [finalisedBanner, setFinalisedBanner] = useState(false);
 
   // Assignment panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -122,6 +133,8 @@ const ClaimItems = () => {
         return;
       }
       setTipAmount(Number(sessionRes.data.tip_amount) || 0);
+      setSessionType((sessionRes.data as any).session_type || "pass_phone");
+      setSessionLocked((sessionRes.data as any).locked || false);
       setPeople((peopleRes.data || []) as Person[]);
       setItems((itemsRes.data || []) as Item[]);
       setClaims((claimsRes.data || []).map(claimFromRow));
@@ -130,11 +143,11 @@ const ClaimItems = () => {
     fetchData();
   }, [sessionId, navigate]);
 
-  // Realtime subscription
+  // Realtime subscription for claims, people, and session lock
   useEffect(() => {
     if (!sessionId) return;
     const channel = supabase
-      .channel(`claims-${sessionId}`)
+      .channel(`session-${sessionId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "item_claims", filter: `session_id=eq.${sessionId}` },
@@ -153,9 +166,37 @@ const ClaimItems = () => {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "session_people", filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          const newPerson = payload.new as Person;
+          setPeople((prev) => {
+            if (prev.some((p) => p.id === newPerson.id)) return prev;
+            return [...prev, newPerson];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated.locked) {
+            setSessionLocked(true);
+            if (isGuest) {
+              setFinalisedBanner(true);
+              const guestPersonId = sessionStorage.getItem("splitpal_guest_person_id");
+              setTimeout(() => {
+                navigate(`/guest-summary?session=${sessionId}&person=${guestPersonId}`);
+              }, 2500);
+            }
+          }
+        }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [sessionId]);
+  }, [sessionId, isGuest, navigate]);
 
   // ─── Claim actions ───
 
@@ -391,7 +432,42 @@ const ClaimItems = () => {
     return Array.from({ length: count }, (_, i) => ({ x: i * (avatarSize - overlap), y: 0 }));
   };
 
+  const isHost = !isGuest;
+  const guestCount = useMemo(() => people.filter((p) => !p.is_payer).length, [people]);
+
+  const shareSessionLink = async () => {
+    if (!sessionId) return;
+    const url = `${window.location.origin}/join?session=${sessionId}`;
+    if (navigator.share) {
+      try { await navigator.share({ text: `Join my SplitPal session: ${url}`, url }); } catch {}
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
+  const handleFinalise = async () => {
+    if (!sessionId) return;
+    // Lock the session
+    await supabase.from("sessions").update({ locked: true } as any).eq("id", sessionId);
+    setSessionLocked(true);
+    navigate(`/summary?session=${sessionId}`);
+  };
+
   const handleContinue = () => {
+    if (sessionType === "share_link" && isHost) {
+      // Show finalise dialog if there are unclaimed items or guests haven't finished
+      const unfinishedGuests = people.filter((p) => !p.is_payer).filter((p) => {
+        const total = personTotals[p.id];
+        return !total || total.items === 0;
+      }).length;
+      if (unfinishedGuests > 0 || !allClaimed) {
+        setShowFinaliseDialog(true);
+        return;
+      }
+      handleFinalise();
+      return;
+    }
     if (sessionId) {
       navigate(`/summary?session=${sessionId}`);
     } else {
@@ -429,6 +505,24 @@ const ClaimItems = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Finalised banner for guests */}
+      {finalisedBanner && (
+        <motion.div
+          initial={{ y: -60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="sticky top-0 z-50 bg-primary text-primary-foreground px-4 py-3 text-center font-display font-semibold"
+        >
+          🎉 The bill has been finalised! Redirecting to your summary...
+        </motion.div>
+      )}
+
+      {/* Session locked banner */}
+      {sessionLocked && !finalisedBanner && (
+        <div className="sticky top-0 z-50 bg-muted border-b border-border px-4 py-3 flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground">
+          <Lock className="w-4 h-4" /> This session is locked — no more changes allowed
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-6 pb-2">
         {!sessionId && (
@@ -439,11 +533,28 @@ const ClaimItems = () => {
             <ArrowLeft className="w-5 h-5 text-foreground" />
           </button>
         )}
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-display font-bold text-foreground">Claim Items</h1>
           <p className="text-sm text-muted-foreground">Tap to claim · Tap again for details</p>
         </div>
       </div>
+
+      {/* Share link banner (share_link mode) */}
+      {sessionType === "share_link" && isHost && sessionId && (
+        <div className="px-4 py-2">
+          <button
+            onClick={shareSessionLink}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-sm"
+          >
+            <Link2 className="w-5 h-5 text-primary flex-shrink-0" />
+            <div className="flex-1 text-left">
+              <p className="font-display font-semibold text-foreground">Share session link</p>
+              <p className="text-xs text-muted-foreground">{guestCount} guest{guestCount !== 1 ? "s" : ""} joined</p>
+            </div>
+            <Share2 className="w-4 h-4 text-primary" />
+          </button>
+        </div>
+      )}
 
       {/* Receipt photo collapsible */}
       {receiptImage && (
@@ -765,21 +876,57 @@ const ClaimItems = () => {
         </div>
       </div>
 
-      {/* Continue button */}
-      <div className="px-4 pb-8">
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={handleContinue}
-          disabled={!allClaimed}
-          className={`w-full h-14 rounded-2xl font-display font-semibold text-lg transition-all flex items-center justify-center gap-2 ${
-            allClaimed
-              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {allClaimed ? "Continue" : `Claim all ${items.length - fullyClaimedCount} remaining`}
-        </motion.button>
-      </div>
+      {/* Continue / Finalise button */}
+      {!sessionLocked && (
+        <div className="px-4 pb-8">
+          {sessionType === "share_link" && isHost ? (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={handleContinue}
+              className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-display font-semibold text-lg shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+            >
+              Finalise & generate links
+            </motion.button>
+          ) : (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={handleContinue}
+              disabled={!allClaimed}
+              className={`w-full h-14 rounded-2xl font-display font-semibold text-lg transition-all flex items-center justify-center gap-2 ${
+                allClaimed
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {allClaimed ? "Continue" : `Claim all ${items.length - fullyClaimedCount} remaining`}
+            </motion.button>
+          )}
+        </div>
+      )}
+
+      {/* Finalise confirmation dialog */}
+      <AlertDialog open={showFinaliseDialog} onOpenChange={setShowFinaliseDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Finalise the bill?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const unfinished = people.filter((p) => !p.is_payer).filter((p) => {
+                  const total = personTotals[p.id];
+                  return !total || total.items === 0;
+                }).length;
+                if (unfinished > 0) return `${unfinished} guest${unfinished !== 1 ? "s" : ""} haven't finished claiming — continue anyway?`;
+                if (!allClaimed) return "Some items are still unclaimed — continue anyway?";
+                return "This will lock the session and generate payment links.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go back</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFinalise}>Finalise</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Assignment Panel Drawer — multi-unit items only */}
       <Drawer open={panelOpen} onOpenChange={setPanelOpen}>
