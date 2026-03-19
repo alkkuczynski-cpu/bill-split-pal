@@ -412,17 +412,20 @@ const ReceiptUpload = () => {
                 </div>
                 <div className="flex-1">
                   <input
-                    type="number"
-                    step="0.01"
+                    inputMode="decimal"
                     value={tipValue}
-                    onChange={(e) => setTipValue(e.target.value)}
+                    onChange={(e) => { setTipValue(e.target.value); setNoTipActive(false); }}
                     placeholder={tipMode === "percent" ? "e.g. 10" : "e.g. 5.00"}
                     className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <button
-                  onClick={() => setTipValue("0")}
-                  className="px-3 py-2 rounded-lg bg-muted border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+                  onClick={() => { setTipValue("0"); setNoTipActive(true); }}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap ${
+                    noTipActive
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                  }`}
                 >
                   No tip
                 </button>
