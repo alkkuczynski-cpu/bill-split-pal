@@ -20,6 +20,7 @@ export type Database = {
           id: string
           item_id: string
           person_id: string
+          quantity: number
           session_id: string
         }
         Insert: {
@@ -27,6 +28,7 @@ export type Database = {
           id?: string
           item_id: string
           person_id: string
+          quantity?: number
           session_id: string
         }
         Update: {
@@ -34,6 +36,7 @@ export type Database = {
           id?: string
           item_id?: string
           person_id?: string
+          quantity?: number
           session_id?: string
         }
         Relationships: [
