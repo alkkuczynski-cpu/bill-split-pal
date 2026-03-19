@@ -351,6 +351,41 @@ const ClaimItems = () => {
     return involved;
   };
 
+  // Compute fraction for a person on an item
+  const getPersonFraction = (personId: string, itemId: string) => {
+    const claim = claims.find((c) => c.item_id === itemId && c.person_id === personId);
+    let qty = claim?.quantity ?? 0;
+    let hasHalf = false;
+    if (claim && claim.shared_with.length > 0) hasHalf = true;
+    if (claims.some((c) => c.item_id === itemId && c.person_id !== personId && c.shared_with.includes(personId)))
+      hasHalf = true;
+    return { qty, hasHalf };
+  };
+
+  const formatFraction = (qty: number, hasHalf: boolean) => {
+    if (qty === 0 && hasHalf) return "½";
+    if (qty === 0 && !hasHalf) return "0";
+    if (hasHalf) return `${qty}½`;
+    return `${qty}`;
+  };
+
+  // SVG pie segment path
+  const pieSegmentPath = (index: number, total: number, radius: number) => {
+    if (total === 1) return `M 0 0 m -${radius} 0 a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 -${radius * 2} 0`;
+    const startAngle = (index / total) * 360 - 90;
+    const endAngle = ((index + 1) / total) * 360 - 90;
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+    const r = radius;
+    const cx = r, cy = r;
+    const x1 = cx + r * Math.cos(startRad);
+    const y1 = cy + r * Math.sin(startRad);
+    const x2 = cx + r * Math.cos(endRad);
+    const y2 = cy + r * Math.sin(endRad);
+    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+  };
+
   const handleContinue = () => {
     if (sessionId) {
       navigate(`/summary?session=${sessionId}`);
