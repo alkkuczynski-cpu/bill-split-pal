@@ -623,7 +623,7 @@ const ClaimItems = () => {
                       // Render share groups as overlapping clusters
                       shareGroups.forEach((group, gi) => {
                         elements.push(
-                          <div key={`share-${gi}`} className="flex items-center -space-x-2 relative">
+                          <div key={`share-${gi}`} className="flex items-start -space-x-1.5 relative">
                             {/* Subtle connecting glow behind the cluster */}
                             <div
                               className="absolute inset-0 rounded-full opacity-20 blur-sm pointer-events-none"
