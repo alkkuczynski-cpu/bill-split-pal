@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Crown, Check, Users, ChevronDown, ChevronUp,
-  Minus, Plus, AlertTriangle, Share2, XCircle,
+  Minus, Plus, AlertTriangle, XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
