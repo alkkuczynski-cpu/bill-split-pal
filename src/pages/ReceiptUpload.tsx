@@ -148,8 +148,8 @@ const ReceiptUpload = () => {
 
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const tipAmount = tipMode === "percent"
-    ? subtotal * (parseFloat(tipValue) || 0) / 100
-    : parseFloat(tipValue) || 0;
+    ? subtotal * (parsePriceInput(tipValue)) / 100
+    : parsePriceInput(tipValue);
   const total = subtotal + tipAmount;
 
   const hasMismatches = items.some((item) => item.mismatch);
