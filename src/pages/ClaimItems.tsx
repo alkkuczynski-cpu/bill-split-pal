@@ -542,7 +542,7 @@ const ClaimItems = () => {
                   {/* Split info & warnings */}
                   {(itemClaims.length > 0 || involved.size > 0) && (
                     <div className="mt-2 space-y-0.5">
-                      {info?.overClaimed && (
+                      {isMultiUnit && info?.overClaimed && (
                         <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
                           Over-claimed by {info.totalUnits - item.quantity} unit{info.totalUnits - item.quantity !== 1 ? "s" : ""}
