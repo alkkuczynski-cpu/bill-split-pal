@@ -72,7 +72,21 @@ const Summary = () => {
           supabase.from("session_items").select("*").eq("session_id", sessionId).order("sort_order"),
           supabase.from("item_claims").select("*").eq("session_id", sessionId),
         ]);
-        if (sessionRes.data) setTipAmount(sessionRes.data.tip_amount ?? 0);
+        if (sessionRes.data) {
+          setTipAmount(sessionRes.data.tip_amount ?? 0);
+          // Fetch host's revolut username
+          const hostUserId = (sessionRes.data as any).host_user_id;
+          if (hostUserId) {
+            const { data: hostProfile } = await supabase
+              .from("profiles")
+              .select("revolut_username")
+              .eq("user_id", hostUserId)
+              .single();
+            if (hostProfile) setRevolutUsername((hostProfile as any).revolut_username || "");
+          }
+        }
+        // Use profile's revolut username as fallback
+        if (profile?.revolut_username) setRevolutUsername((prev) => prev || profile.revolut_username);
         if (peopleRes.data) setPeople(peopleRes.data);
         if (itemsRes.data) setItems(itemsRes.data as Item[]);
         if (claimsRes.data) {
