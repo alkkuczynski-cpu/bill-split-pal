@@ -198,6 +198,7 @@ const ReceiptUpload = () => {
       }));
       await supabase.from("session_items").insert(itemsToInsert);
 
+      sessionStorage.setItem("splitpal_receipt_image", preview || "");
       navigate(`/claim?session=${sessionId}`);
     } catch (err) {
       console.error("Error saving session:", err);
