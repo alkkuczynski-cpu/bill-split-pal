@@ -203,6 +203,7 @@ const ReceiptUpload = () => {
     } catch (err) {
       console.error("Error saving session:", err);
       sessionStorage.setItem("splitpal_items", JSON.stringify({ items, tipAmount, total }));
+      sessionStorage.setItem("splitpal_receipt_image", preview || "");
       navigate("/claim");
     }
   };
