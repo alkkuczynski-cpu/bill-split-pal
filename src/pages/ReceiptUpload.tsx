@@ -115,11 +115,11 @@ const ReceiptUpload = () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
-      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-receipt`;
+      const functionUrl = `https://oiyophkvhbohehkyvxxd.supabase.co/functions/v1/scan-receipt`;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9peW9waGt2aGJvaGVoa3l2eHhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxNzcwMDYsImV4cCI6MjA1ODc1MzAwNn0.4fIovPryOjAtN0A4WQeVWssDyUIC_u_gLAcF0yJZ4fs",
+        "Authorization": `Bearer ${accessToken ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9peW9waGt2aGJvaGVoa3l2eHhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxNzcwMDYsImV4cCI6MjA1ODc1MzAwNn0.4fIovPryOjAtN0A4WQeVWssDyUIC_u_gLAcF0yJZ4fs"}`,
       };
 
       console.log("[scan] Sending request to backend function", {
