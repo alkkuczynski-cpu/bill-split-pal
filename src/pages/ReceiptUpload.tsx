@@ -105,9 +105,13 @@ const ReceiptUpload = () => {
         payloadLength: preview.length,
       });
 
-      const { data: parsedData, error: fnError } = await supabase.functions.invoke("scan-receipt", {
+      const invokePromise = supabase.functions.invoke("scan-receipt", {
         body: { imageBase64: preview },
       });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Receipt scanning timed out — please try again")), 30000)
+      );
+      const { data: parsedData, error: fnError } = await Promise.race([invokePromise, timeoutPromise]) as any;
 
       const elapsedMs = Date.now() - scanStartedAt;
       console.log("[scan] Response received", { elapsedMs, parsedData, fnError });
