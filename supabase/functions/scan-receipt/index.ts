@@ -10,27 +10,6 @@ const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const MODEL = "claude-haiku-4-5-20251001";
 
-const dataUrlRegex =
-  /^data:(image\/[a-z0-9.+-]+)(?:;[a-z0-9.+-]+=[^;,]+)*(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i;
-
-const normalizeImagePayload = (
-  input: string
-): { mediaType: string; base64Data: string } => {
-  const trimmed = input.trim();
-  const match = trimmed.match(dataUrlRegex);
-
-  if (match) {
-    return {
-      mediaType: match[1].toLowerCase(),
-      base64Data: match[2].replace(/\s/g, ""),
-    };
-  }
-
-  return {
-    mediaType: "image/jpeg",
-    base64Data: trimmed.replace(/\s/g, ""),
-  };
-};
 
 serve(async (req) => {
   const requestId = crypto.randomUUID();
