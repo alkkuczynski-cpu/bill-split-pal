@@ -602,7 +602,27 @@ const ReceiptUpload = () => {
 
       {/* Bottom buttons */}
       {preview && items.length === 0 && (
-        <div className="px-4 pb-8">
+        <div className="px-4 pb-8 space-y-3">
+          {/* Error banner with retry */}
+          {scanError && !isProcessing && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 flex items-start gap-3"
+            >
+              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">{scanError}</p>
+                <button
+                  onClick={handleScan}
+                  className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-primary active:scale-95 transition-transform"
+                >
+                  <RefreshCw className="w-4 h-4" /> Try again
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           <motion.button
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -619,7 +639,7 @@ const ReceiptUpload = () => {
             ) : (
               <>
                 <Upload className="w-5 h-5" />
-                Scan Receipt
+                {scanError ? "Retry Scan" : "Scan Receipt"}
               </>
             )}
           </motion.button>
