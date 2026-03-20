@@ -662,7 +662,7 @@ const ReceiptUpload = () => {
             >
               <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">{scanError}</p>
+                <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-words">{scanError}</pre>
                 <button
                   onClick={handleScan}
                   className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-primary active:scale-95 transition-transform"
