@@ -178,6 +178,11 @@ const ReceiptUpload = () => {
     const sessionData = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
     const sessionType = isShareLink ? "share_link" : "pass_phone";
 
+    // Determine host name from profile or guest storage
+    const guestHost = (() => { try { return JSON.parse(safeStorage.getItem("splitpal_guest_host") || "null"); } catch { return null; } })();
+    const hostDisplayName = profile?.display_name || guestHost?.display_name || "Host";
+    const hostRevolut = profile?.revolut_username || guestHost?.revolut_username || "";
+
     try {
       // Create session in DB
       const { data: sessionRow, error: sessionError } = await supabase
@@ -201,21 +206,22 @@ const ReceiptUpload = () => {
 
       const sessionId = sessionRow.id;
 
-      if (isShareLink) {
-        // In share_link mode, add the host as payer
-        const { data: hostProfile } = await supabase
-          .from("profiles")
-          .select("display_name")
-          .eq("user_id", user!.id)
-          .single();
-        const hostName = (hostProfile as any)?.display_name || "Host";
+      // Save session identity to localStorage
+      saveIdentity({
+        role: "host",
+        displayName: hostDisplayName,
+        sessionId,
+        revolutUsername: hostRevolut,
+      });
 
+      if (isShareLink) {
+        const hostName = hostDisplayName;
         await supabase.from("session_people").insert({
           session_id: sessionId,
           name: hostName,
           is_payer: true,
           sort_order: 0,
-          user_id: user!.id,
+          user_id: user?.id || null,
         } as any);
       } else {
         // Pass phone mode: insert all people
