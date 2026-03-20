@@ -5,7 +5,7 @@ import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Tras
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { compressImage, stripDataUrlPrefix, isValidBase64 } from "@/lib/imageCompress";
+import { stripDataUrlPrefix } from "@/lib/imageCompress";
 import { saveIdentity } from "@/lib/sessionIdentity";
 import { safeStorage } from "@/lib/storage";
 
