@@ -42,6 +42,7 @@ const ReceiptUpload = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
   const [fileName, setFileName] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
