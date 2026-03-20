@@ -6,10 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
-const MODEL = "claude-haiku-4-5-20251001";
-
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const MODEL = "google/gemini-2.5-flash";
 
 serve(async (req) => {
   const requestId = crypto.randomUUID();
@@ -23,74 +21,35 @@ serve(async (req) => {
 
   try {
     const rawBody = await req.text();
-    console.log(`[scan-receipt:${requestId}] Raw body length: ${rawBody.length}`);
-    
     let body: any;
     try {
       body = JSON.parse(rawBody);
-    } catch (e) {
+    } catch {
       return new Response(
-        JSON.stringify({ error: "Invalid JSON body", rawLength: rawBody.length }),
+        JSON.stringify({ error: "Invalid JSON body" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    
-    const imageBase64 = body?.imageBase64;
-    console.log(`[scan-receipt:${requestId}] imageBase64 length: ${imageBase64?.length ?? "missing"}`);
 
+    const imageBase64 = body?.imageBase64;
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return new Response(
-        JSON.stringify({ error: "No image provided", bodyKeys: Object.keys(body || {}), rawLength: rawBody.length }),
+        JSON.stringify({ error: "No image provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[scan-receipt:${requestId}] Image payload: ${imageBase64.length} chars`);
-
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-    const mediaType = imageBase64.includes('data:image/') ? imageBase64.split(';')[0].split(':')[1] : 'image/jpeg';
+    // Build the data URL for the image
+    const dataUrl = imageBase64.startsWith("data:") ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
 
-    console.log(`[scan-receipt:${requestId}] Normalized: mediaType=${mediaType}, base64Length=${base64Data.length}`);
+    console.log(`[scan-receipt:${requestId}] Calling Lovable AI Gateway (${MODEL})...`);
 
-    if (base64Data.length < 100) {
-      return new Response(
-        JSON.stringify({ error: `Image data too small (${base64Data.length} chars)` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[scan-receipt:${requestId}] Calling Anthropic API (${MODEL})...`);
-
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data: base64Data,
-                },
-              },
-              {
-                type: "text",
-                text: `Extract all line items from this receipt. Return ONLY a valid JSON object with this exact structure:
+    const prompt = `Extract all line items from this receipt image. Return ONLY a valid JSON object with this exact structure:
 {"items": [{"name": "Item Name", "price": 5.90, "quantity": 2, "mismatch": false}]}
 
 Rules:
@@ -98,7 +57,27 @@ Rules:
 - If a line shows "2x Guinness €11.80", return quantity=2, price=5.90.
 - If quantity × price does not match the line total shown, set "mismatch" to true.
 - Use numeric values for price and quantity.
-- Return ONLY the JSON object, no other text.`,
+- Return ONLY the JSON object, no other text.`;
+
+    const response = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: dataUrl },
+              },
+              {
+                type: "text",
+                text: prompt,
               },
             ],
           },
@@ -107,25 +86,28 @@ Rules:
     });
 
     const elapsed = Date.now() - startedAt;
-    console.log(`[scan-receipt:${requestId}] Anthropic responded: ${response.status} (${elapsed}ms)`);
+    console.log(`[scan-receipt:${requestId}] Gateway responded: ${response.status} (${elapsed}ms)`);
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`[scan-receipt:${requestId}] Anthropic error:`, errText);
+      console.error(`[scan-receipt:${requestId}] Gateway error:`, errText);
+      const status = response.status === 429 ? 429 : response.status === 402 ? 402 : 500;
+      const userMsg = response.status === 429
+        ? "Rate limit exceeded, please try again shortly."
+        : response.status === 402
+        ? "AI credits exhausted. Please add funds in Settings > Workspace > Usage."
+        : `AI gateway error (${response.status})`;
       return new Response(
-        JSON.stringify({ error: `Anthropic API error (${response.status}): ${errText}` }),
-        {
-          status: response.status === 429 ? 429 : response.status === 401 ? 401 : 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: userMsg }),
+        { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
-    const textContent = data.content?.find((c: any) => c.type === "text")?.text;
+    const textContent = data.choices?.[0]?.message?.content;
 
     if (!textContent) {
-      console.error(`[scan-receipt:${requestId}] No text in response:`, JSON.stringify(data));
+      console.error(`[scan-receipt:${requestId}] No content in response:`, JSON.stringify(data));
       return new Response(
         JSON.stringify({ error: "No text content in AI response" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -139,7 +121,6 @@ Rules:
                       textContent.match(/(\{[\s\S]*\})/);
 
     if (!jsonMatch) {
-      console.error(`[scan-receipt:${requestId}] Could not find JSON in response`);
       return new Response(
         JSON.stringify({ error: `Could not parse AI response: ${textContent}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -149,15 +130,13 @@ Rules:
     let parsed: { items?: any[] };
     try {
       parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-    } catch (parseErr) {
-      console.error(`[scan-receipt:${requestId}] JSON parse failed:`, parseErr);
+    } catch {
       return new Response(
         JSON.stringify({ error: `Invalid JSON from AI: ${jsonMatch[1] || jsonMatch[0]}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Normalize: if response is an array, wrap it
     if (Array.isArray(parsed)) {
       parsed = { items: parsed };
     }
