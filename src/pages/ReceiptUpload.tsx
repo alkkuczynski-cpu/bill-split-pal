@@ -5,6 +5,9 @@ import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Tras
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { compressImage } from "@/lib/imageCompress";
+import { saveIdentity } from "@/lib/sessionIdentity";
+import { safeStorage } from "@/lib/storage";
 
 interface LineItem {
   id: string;
@@ -34,11 +37,12 @@ const ReceiptUpload = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isShareLink = searchParams.get("type") === "share_link";
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
   const [fileName, setFileName] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,24 +78,33 @@ const ReceiptUpload = () => {
   const handleScan = async () => {
     if (!preview) return;
     setIsProcessing(true);
+    setScanStatus("Compressing image…");
 
     try {
+      // Compress image before sending
+      const compressed = await compressImage(preview, 1200, 0.7);
+      setScanStatus("Reading your receipt…");
+
       const { data, error } = await supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: preview },
+        body: { imageBase64: compressed },
       });
 
       if (error) {
         console.error("Scan error:", error);
         toast.error("Failed to scan receipt. Please try again.");
         setIsProcessing(false);
+        setScanStatus("");
         return;
       }
 
       if (data?.error) {
         toast.error(data.error);
         setIsProcessing(false);
+        setScanStatus("");
         return;
       }
+
+      setScanStatus("Organising items…");
 
       const extracted: LineItem[] = (data.items || []).map((item: any, i: number) => ({
         id: `item-${i}-${Date.now()}`,
@@ -109,6 +122,7 @@ const ReceiptUpload = () => {
       toast.error("Something went wrong scanning the receipt.");
     } finally {
       setIsProcessing(false);
+      setScanStatus("");
     }
   };
 
@@ -164,6 +178,11 @@ const ReceiptUpload = () => {
     const sessionData = JSON.parse(sessionStorage.getItem("splitpal_session") || "{}");
     const sessionType = isShareLink ? "share_link" : "pass_phone";
 
+    // Determine host name from profile or guest storage
+    const guestHost = (() => { try { return JSON.parse(safeStorage.getItem("splitpal_guest_host") || "null"); } catch { return null; } })();
+    const hostDisplayName = profile?.display_name || guestHost?.display_name || "Host";
+    const hostRevolut = profile?.revolut_username || guestHost?.revolut_username || "";
+
     try {
       // Create session in DB
       const { data: sessionRow, error: sessionError } = await supabase
@@ -187,21 +206,22 @@ const ReceiptUpload = () => {
 
       const sessionId = sessionRow.id;
 
-      if (isShareLink) {
-        // In share_link mode, add the host as payer
-        const { data: hostProfile } = await supabase
-          .from("profiles")
-          .select("display_name")
-          .eq("user_id", user!.id)
-          .single();
-        const hostName = (hostProfile as any)?.display_name || "Host";
+      // Save session identity to localStorage
+      saveIdentity({
+        role: "host",
+        displayName: hostDisplayName,
+        sessionId,
+        revolutUsername: hostRevolut,
+      });
 
+      if (isShareLink) {
+        const hostName = hostDisplayName;
         await supabase.from("session_people").insert({
           session_id: sessionId,
           name: hostName,
           is_payer: true,
           sort_order: 0,
-          user_id: user!.id,
+          user_id: user?.id || null,
         } as any);
       } else {
         // Pass phone mode: insert all people
@@ -567,7 +587,7 @@ const ReceiptUpload = () => {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Scanning receipt...
+                {scanStatus || "Scanning receipt…"}
               </>
             ) : (
               <>

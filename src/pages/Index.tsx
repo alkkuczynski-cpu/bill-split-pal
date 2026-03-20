@@ -1,23 +1,26 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Receipt, Moon, ArrowRight, User, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Receipt, Moon, ArrowRight, User, Loader2, AlertCircle, RefreshCw, LogOut, Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { lovable } from "@/integrations/lovable/index";
 import { safeStorage } from "@/lib/storage";
+import { clearIdentity } from "@/lib/sessionIdentity";
 import { toast } from "sonner";
 
 const AUTH_TIMEOUT_MS = 10_000;
 
 const Index = () => {
   const navigate = useNavigate();
-  const { user, profile, loading, needsOnboarding } = useAuth();
+  const { user, profile, loading, needsOnboarding, signOut } = useAuth();
   const [signingIn, setSigningIn] = useState(false);
   const [authTimedOut, setAuthTimedOut] = useState(false);
   const [showGuestFallback, setShowGuestFallback] = useState(false);
   const [guestName, setGuestName] = useState("");
   const [guestRevolut, setGuestRevolut] = useState("");
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Check for existing guest host
   const guestHostStr = safeStorage.getItem("splitpal_guest_host");
@@ -31,6 +34,18 @@ const Index = () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileMenuOpen]);
 
   const attemptGoogleSignIn = async () => {
     setSigningIn(true);
@@ -72,6 +87,28 @@ const Index = () => {
     window.location.reload();
   };
 
+  const handleSignOut = async () => {
+    setProfileMenuOpen(false);
+    await signOut();
+    safeStorage.removeItem("splitpal_guest_host");
+    clearIdentity();
+    // Clear session storage too
+    sessionStorage.clear();
+    toast.success("Signed out");
+  };
+
+  const handleEditProfile = () => {
+    setProfileMenuOpen(false);
+    if (user) {
+      navigate("/profile");
+    } else {
+      // Guest host — open inline editor
+      setGuestName(parsedGuestHost?.display_name || "");
+      setGuestRevolut(parsedGuestHost?.revolut_username || "");
+      setShowGuestFallback(true);
+    }
+  };
+
   const handleAction = async (targetMode: string) => {
     if (!isAuthenticated) {
       await attemptGoogleSignIn();
@@ -84,18 +121,56 @@ const Index = () => {
     navigate(`/mode-select?mode=${targetMode}`);
   };
 
-  // Never block the home screen — show content immediately, even while loading
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Profile icon */}
+      {/* Profile menu */}
       {isAuthenticated && displayProfile && (
-        <div className="absolute top-6 right-6 z-10">
+        <div className="absolute top-6 right-6 z-30" ref={menuRef}>
           <button
-            onClick={() => user ? navigate("/profile") : setShowGuestFallback(true)}
+            onClick={() => setProfileMenuOpen((p) => !p)}
             className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold shadow-md active:scale-95 transition-transform"
           >
             {displayProfile.display_name ? displayProfile.display_name[0].toUpperCase() : <User className="w-5 h-5" />}
           </button>
+
+          <AnimatePresence>
+            {profileMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 mt-2 w-64 rounded-2xl bg-card border border-border shadow-lg overflow-hidden"
+              >
+                {/* User info */}
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="font-display font-bold text-foreground text-sm truncate">
+                    {displayProfile.display_name}
+                  </p>
+                  {displayProfile.revolut_username && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      @{displayProfile.revolut_username}
+                    </p>
+                  )}
+                </div>
+                {/* Actions */}
+                <button
+                  onClick={handleEditProfile}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors active:bg-muted"
+                >
+                  <Pencil className="w-4 h-4 text-muted-foreground" />
+                  Edit profile
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/5 transition-colors active:bg-destructive/10 border-t border-border"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 

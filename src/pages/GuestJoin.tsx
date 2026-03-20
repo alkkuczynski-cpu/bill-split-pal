@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { User, ArrowRight, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { saveIdentity } from "@/lib/sessionIdentity";
 
 const GuestJoin = () => {
   const navigate = useNavigate();
@@ -60,9 +61,15 @@ const GuestJoin = () => {
       return;
     }
 
-    // Store guest identity locally
+    // Store guest identity
     sessionStorage.setItem("splitpal_guest_person_id", person.id);
     sessionStorage.setItem("splitpal_guest_name", name.trim());
+    saveIdentity({
+      role: "guest",
+      displayName: name.trim(),
+      sessionId: sessionId!,
+      personId: person.id,
+    });
 
     if (hasItems) {
       navigate(`/claim?session=${sessionId}&guest=true`);
