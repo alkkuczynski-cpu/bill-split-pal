@@ -5,7 +5,6 @@ import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Tras
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { stripDataUrlPrefix } from "@/lib/imageCompress";
 import { saveIdentity } from "@/lib/sessionIdentity";
 import { safeStorage } from "@/lib/storage";
 
@@ -32,6 +31,18 @@ const ITEM_COLORS = [
   "hsl(220, 60%, 55%)",  // royal blue
   "hsl(0, 65%, 50%)",    // red
 ];
+
+const TEMP_SCAN_TIMEOUT_MS = 10_000;
+
+const formatRawError = (value: unknown): string => {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
 
 const ReceiptUpload = () => {
   const navigate = useNavigate();
@@ -77,43 +88,84 @@ const ReceiptUpload = () => {
   };
 
   const handleScan = async () => {
-    if (!preview) return;
+    if (!preview) {
+      console.warn("[scan] handleScan called without preview image");
+      return;
+    }
+
+    const scanStartedAt = Date.now();
+    console.groupCollapsed("[scan] Starting receipt scan");
+    console.log("[scan] Preview ready", {
+      previewLength: preview.length,
+      timeoutMs: TEMP_SCAN_TIMEOUT_MS,
+      startedAt: new Date(scanStartedAt).toISOString(),
+    });
+
     setIsProcessing(true);
-    setScanStatus("Compressing image…");
+    setScanStatus("Reading your receipt…");
     setScanError(null);
 
-    // Set up 60-second timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60_000);
+    const timeoutId = window.setTimeout(() => {
+      console.error(`[scan] Timeout reached (${TEMP_SCAN_TIMEOUT_MS}ms). Aborting request now.`);
+      controller.abort();
+    }, TEMP_SCAN_TIMEOUT_MS);
 
     try {
-      // Send original image directly — no compression
-      setScanStatus("Reading your receipt…");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
 
-      const { data, error } = await supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: preview },
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-receipt`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      };
+
+      console.log("[scan] Sending request to backend function", {
+        functionUrl,
+        hasAccessToken: Boolean(accessToken),
+        payloadLength: preview.length,
       });
 
-      clearTimeout(timeoutId);
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ imageBase64: preview }),
+        signal: controller.signal,
+      });
 
-      if (error) {
-        console.error("Scan error:", error);
-        setScanError("Failed to scan receipt. Please try again.");
-        setIsProcessing(false);
-        setScanStatus("");
-        return;
+      const elapsedMs = Date.now() - scanStartedAt;
+      console.log("[scan] Response received", {
+        status: response.status,
+        ok: response.ok,
+        elapsedMs,
+      });
+
+      const rawResponseText = await response.text();
+      console.log("[scan] Raw response body", rawResponseText);
+
+      let parsedData: any = null;
+      if (rawResponseText) {
+        try {
+          parsedData = JSON.parse(rawResponseText);
+        } catch (parseError) {
+          console.error("[scan] Failed to parse JSON response", parseError);
+        }
       }
 
-      if (data?.error) {
-        setScanError(data.error);
-        setIsProcessing(false);
-        setScanStatus("");
-        return;
+      if (!response.ok) {
+        const rawErrorMessage = parsedData?.error || rawResponseText || `HTTP ${response.status}`;
+        throw new Error(String(rawErrorMessage));
+      }
+
+      if (!parsedData || !Array.isArray(parsedData.items)) {
+        throw new Error(`Unexpected response payload: ${rawResponseText || "<empty>"}`);
       }
 
       setScanStatus("Organising items…");
 
-      const extracted: LineItem[] = (data.items || []).map((item: any, i: number) => ({
+      const extracted: LineItem[] = parsedData.items.map((item: any, i: number) => ({
         id: `item-${i}-${Date.now()}`,
         name: item.name,
         price: item.price,
@@ -122,20 +174,32 @@ const ReceiptUpload = () => {
         color: ITEM_COLORS[i % ITEM_COLORS.length],
       }));
 
+      console.log("[scan] Parsed items successfully", {
+        itemCount: extracted.length,
+        elapsedMs: Date.now() - scanStartedAt,
+      });
+
       setItems(extracted);
       setScanError(null);
       toast.success(`Found ${extracted.length} items on the receipt`);
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error("Scan error:", err);
-      if (err?.name === "AbortError" || controller.signal.aborted) {
-        setScanError("Receipt scanning timed out — please try again.");
+    } catch (err: unknown) {
+      const rawMessage = formatRawError(err);
+      console.error("[scan] Scan failed", err);
+
+      if (controller.signal.aborted || (err as any)?.name === "AbortError") {
+        setScanError(`Receipt scanning timed out — please try again.\nRaw error: ${rawMessage || "AbortError"}`);
       } else {
-        setScanError("Something went wrong scanning the receipt. Please try again.");
+        setScanError(`Raw error: ${rawMessage}`);
       }
     } finally {
+      window.clearTimeout(timeoutId);
       setIsProcessing(false);
       setScanStatus("");
+      console.log("[scan] Scan flow finished", {
+        elapsedMs: Date.now() - scanStartedAt,
+        aborted: controller.signal.aborted,
+      });
+      console.groupEnd();
     }
   };
 
