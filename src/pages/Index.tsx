@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Receipt, Moon, ArrowRight, User, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { lovable } from "@/integrations/lovable/index";
+import { safeStorage } from "@/lib/storage";
 import { toast } from "sonner";
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -18,9 +19,9 @@ const Index = () => {
   const [guestRevolut, setGuestRevolut] = useState("");
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Check for existing guest host in localStorage
-  const guestHost = typeof window !== "undefined" ? localStorage.getItem("splitpal_guest_host") : null;
-  const parsedGuestHost = guestHost ? JSON.parse(guestHost) : null;
+  // Check for existing guest host
+  const guestHostStr = safeStorage.getItem("splitpal_guest_host");
+  const parsedGuestHost = guestHostStr ? (() => { try { return JSON.parse(guestHostStr); } catch { return null; } })() : null;
 
   const isAuthenticated = !!user || !!parsedGuestHost;
   const displayProfile = profile || parsedGuestHost;
@@ -49,7 +50,6 @@ const Index = () => {
         setSigningIn(false);
         setAuthTimedOut(true);
         toast.error("Google sign-in failed. Try again or continue as guest.");
-        console.error("Sign in error:", error);
       }
     } catch (e) {
       clearTimeout(timeoutRef.current);
@@ -65,11 +65,10 @@ const Index = () => {
     const revolut = guestRevolut.trim().replace(/^@/, "");
     if (!name || !revolut) return;
     const guestData = { display_name: name, revolut_username: revolut };
-    localStorage.setItem("splitpal_guest_host", JSON.stringify(guestData));
+    safeStorage.setItem("splitpal_guest_host", JSON.stringify(guestData));
     setShowGuestFallback(false);
     setAuthTimedOut(false);
     toast.success("Profile saved! You're all set.");
-    // Force re-render
     window.location.reload();
   };
 
@@ -85,14 +84,7 @@ const Index = () => {
     navigate(`/mode-select?mode=${targetMode}`);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
-  }
-
+  // Never block the home screen — show content immediately, even while loading
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Profile icon */}
@@ -264,7 +256,7 @@ const Index = () => {
           <ArrowRight className="w-5 h-5 opacity-70" />
         </motion.button>
 
-        {!isAuthenticated && (
+        {!isAuthenticated && !loading && (
           <p className="text-center text-xs text-muted-foreground pt-2">
             Sign in with Google to start splitting
           </p>

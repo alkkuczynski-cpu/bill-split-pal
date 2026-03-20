@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { User, AtSign, ArrowRight } from "lucide-react";
+import { User, AtSign, ArrowRight, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -12,30 +12,53 @@ const Onboarding = () => {
   const [displayName, setDisplayName] = useState("");
   const [revolutUsername, setRevolutUsername] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const canSave = displayName.trim().length > 0 && revolutUsername.trim().length > 0;
 
   const handleSave = async () => {
     if (!user || !canSave) return;
     setSaving(true);
+    setError(null);
 
     const username = revolutUsername.trim().replace(/^@/, "");
 
-    const { error } = await supabase.from("profiles").upsert({
-      user_id: user.id,
-      display_name: displayName.trim(),
-      revolut_username: username,
-    } as any, { onConflict: "user_id" });
+    try {
+      // Try upsert first, fall back to insert if it fails
+      const { error: upsertErr } = await supabase.from("profiles").upsert(
+        {
+          user_id: user.id,
+          display_name: displayName.trim(),
+          revolut_username: username,
+        } as any,
+        { onConflict: "user_id" }
+      );
 
-    if (error) {
-      toast.error("Failed to save profile");
+      if (upsertErr) {
+        // Try a plain insert as fallback
+        const { error: insertErr } = await supabase.from("profiles").insert({
+          user_id: user.id,
+          display_name: displayName.trim(),
+          revolut_username: username,
+        } as any);
+
+        if (insertErr) {
+          console.error("Profile save failed:", insertErr);
+          setError(`Could not save profile: ${insertErr.message}`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      await refreshProfile();
+      toast.success("Profile saved!");
+      navigate("/");
+    } catch (e: any) {
+      console.error("Profile save exception:", e);
+      setError(e?.message || "An unexpected error occurred. Please try again.");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    await refreshProfile();
-    setSaving(false);
-    navigate("/");
   };
 
   return (
@@ -50,6 +73,17 @@ const Onboarding = () => {
       </div>
 
       <div className="flex-1 px-6 max-w-md mx-auto w-full space-y-6">
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 flex items-start gap-3"
+          >
+            <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-foreground">{error}</p>
+          </motion.div>
+        )}
+
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <label className="text-sm font-medium text-foreground mb-2 block">Display Name</label>
           <div className="relative">
