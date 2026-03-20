@@ -1,11 +1,11 @@
 import { useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Trash2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Trash2, AlertTriangle, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { compressImage } from "@/lib/imageCompress";
+import { compressImage, stripDataUrlPrefix, isValidBase64 } from "@/lib/imageCompress";
 import { saveIdentity } from "@/lib/sessionIdentity";
 import { safeStorage } from "@/lib/storage";
 
