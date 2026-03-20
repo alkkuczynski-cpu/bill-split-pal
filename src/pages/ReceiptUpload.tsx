@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { saveIdentity } from "@/lib/sessionIdentity";
 import { safeStorage } from "@/lib/storage";
-import { compressImage } from "@/lib/imageCompress";
+
 
 interface LineItem {
   id: string;
