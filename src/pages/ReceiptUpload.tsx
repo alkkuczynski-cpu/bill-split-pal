@@ -98,23 +98,26 @@ const ReceiptUpload = () => {
     console.log("[scan] Starting receipt scan", { previewLength: preview.length });
 
     setIsProcessing(true);
-    setScanStatus("Compressing image…");
+    setScanStatus("Reading your receipt…");
     setScanError(null);
 
-    try {
-      const compressed = await compressImage(preview);
-      console.log("[scan] Invoking scan-receipt edge function", {
-        originalKB: Math.round(preview.length / 1024),
-        compressedKB: Math.round(compressed.length / 1024),
-      });
+    const statusMessages = ["Almost there…", "Just a moment more…", "Still working…"];
+    let statusIndex = 0;
+    const statusInterval = setInterval(() => {
+      setScanStatus(statusMessages[Math.min(statusIndex, statusMessages.length - 1)]);
+      statusIndex++;
+    }, 10000);
 
-      setScanStatus("Reading your receipt…");
+    try {
+      console.log("[scan] Invoking scan-receipt edge function", {
+        payloadLength: preview.length,
+      });
 
       const invokePromise = supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: compressed },
+        body: { imageBase64: preview },
       });
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Receipt scanning timed out — please try again")), 30000)
+        setTimeout(() => reject(new Error("Receipt scanning timed out — please try again")), 90000)
       );
       const { data: parsedData, error: fnError } = await Promise.race([invokePromise, timeoutPromise]) as any;
 
