@@ -112,55 +112,23 @@ const ReceiptUpload = () => {
     }, SCAN_TIMEOUT_MS);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-
-      const functionUrl = `https://oiyophkvhbohehkyvxxd.supabase.co/functions/v1/scan-receipt`;
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9peW9waGt2aGJvaGVoa3l2eHhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxNzcwMDYsImV4cCI6MjA1ODc1MzAwNn0.4fIovPryOjAtN0A4WQeVWssDyUIC_u_gLAcF0yJZ4fs",
-        "Authorization": `Bearer ${accessToken ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9peW9waGt2aGJvaGVoa3l2eHhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxNzcwMDYsImV4cCI6MjA1ODc1MzAwNn0.4fIovPryOjAtN0A4WQeVWssDyUIC_u_gLAcF0yJZ4fs"}`,
-      };
-
-      console.log("[scan] Sending request to backend function", {
-        functionUrl,
-        hasAccessToken: Boolean(accessToken),
+      console.log("[scan] Invoking scan-receipt edge function", {
         payloadLength: preview.length,
       });
 
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ imageBase64: preview }),
-        signal: controller.signal,
+      const { data: parsedData, error: fnError } = await supabase.functions.invoke("scan-receipt", {
+        body: { imageBase64: preview },
       });
 
       const elapsedMs = Date.now() - scanStartedAt;
-      console.log("[scan] Response received", {
-        status: response.status,
-        ok: response.ok,
-        elapsedMs,
-      });
+      console.log("[scan] Response received", { elapsedMs, parsedData, fnError });
 
-      const rawResponseText = await response.text();
-      console.log("[scan] Raw response body", rawResponseText);
-
-      let parsedData: any = null;
-      if (rawResponseText) {
-        try {
-          parsedData = JSON.parse(rawResponseText);
-        } catch (parseError) {
-          console.error("[scan] Failed to parse JSON response", parseError);
-        }
-      }
-
-      if (!response.ok) {
-        const rawErrorMessage = parsedData?.error || rawResponseText || `HTTP ${response.status}`;
-        throw new Error(String(rawErrorMessage));
+      if (fnError) {
+        throw new Error(fnError.message || String(fnError));
       }
 
       if (!parsedData || !Array.isArray(parsedData.items)) {
-        throw new Error(`Unexpected response payload: ${rawResponseText || "<empty>"}`);
+        throw new Error(`Unexpected response payload: ${JSON.stringify(parsedData)}`);
       }
 
       setScanStatus("Organising items…");
