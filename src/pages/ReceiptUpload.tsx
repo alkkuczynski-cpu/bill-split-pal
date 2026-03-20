@@ -156,6 +156,7 @@ const ReceiptUpload = () => {
       console.error("[scan] Scan failed", err);
       setScanError(`Raw error: ${rawMessage}`);
     } finally {
+      clearInterval(statusInterval);
       setIsProcessing(false);
       setScanStatus("");
       console.log("[scan] Scan flow finished", { elapsedMs: Date.now() - scanStartedAt });
