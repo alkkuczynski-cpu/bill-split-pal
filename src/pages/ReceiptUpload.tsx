@@ -32,7 +32,7 @@ const ITEM_COLORS = [
   "hsl(0, 65%, 50%)",    // red
 ];
 
-const TEMP_SCAN_TIMEOUT_MS = 10_000;
+const SCAN_TIMEOUT_MS = 60_000;
 
 const formatRawError = (value: unknown): string => {
   if (value instanceof Error) return value.message;
@@ -97,7 +97,7 @@ const ReceiptUpload = () => {
     console.groupCollapsed("[scan] Starting receipt scan");
     console.log("[scan] Preview ready", {
       previewLength: preview.length,
-      timeoutMs: TEMP_SCAN_TIMEOUT_MS,
+      timeoutMs: SCAN_TIMEOUT_MS,
       startedAt: new Date(scanStartedAt).toISOString(),
     });
 
@@ -107,9 +107,9 @@ const ReceiptUpload = () => {
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
-      console.error(`[scan] Timeout reached (${TEMP_SCAN_TIMEOUT_MS}ms). Aborting request now.`);
+      console.error(`[scan] Timeout reached (${SCAN_TIMEOUT_MS}ms). Aborting request now.`);
       controller.abort();
-    }, TEMP_SCAN_TIMEOUT_MS);
+    }, SCAN_TIMEOUT_MS);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
