@@ -43,6 +43,7 @@ const ReceiptUpload = () => {
   const [preview, setPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanStatus, setScanStatus] = useState("");
+  const [scanError, setScanError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
