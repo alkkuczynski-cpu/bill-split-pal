@@ -24,14 +24,20 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Determine mime type from base64 prefix or default to jpeg
-    let mimeType = "image/jpeg";
-    const match = imageBase64.match(/^data:(image\/[a-zA-Z+]+);base64,/);
-    let cleanBase64 = imageBase64;
-    if (match) {
-      mimeType = match[1];
-      cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
+    // Clean the base64: strip any data URL prefix robustly
+    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "").trim();
+
+    if (!cleanBase64 || cleanBase64.length < 100) {
+      return new Response(JSON.stringify({ error: "Image data is empty or too small" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    // Always use image/jpeg since client compresses to JPEG
+    const imageUrl = `data:image/jpeg;base64,${cleanBase64}`;
+
+    console.log(`Processing image: ${cleanBase64.length} base64 chars`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -61,9 +67,9 @@ Return ONLY valid JSON using the extract_items tool.`,
             content: [
               {
                 type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${cleanBase64}` },
+                image_url: { url: imageUrl },
               },
-               {
+              {
                 type: "text",
                 text: "Extract all line items and their prices from this receipt. For each item: if a quantity is shown (e.g. '2x'), divide the line total by the quantity to get the unit price. Use euro amounts. Verify that quantity × unit_price = line_total for every item.",
               },
@@ -107,7 +113,7 @@ Return ONLY valid JSON using the extract_items tool.`,
     if (!response.ok) {
       const errText = await response.text();
       console.error("AI gateway error:", response.status, errText);
-      
+
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limited. Please try again in a moment." }), {
           status: 429,
@@ -120,8 +126,14 @@ Return ONLY valid JSON using the extract_items tool.`,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
-      return new Response(JSON.stringify({ error: "Failed to process receipt" }), {
+      if (response.status === 400) {
+        return new Response(JSON.stringify({ error: "The image could not be processed. Please try a clearer photo." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ error: "Failed to process receipt. Please try again." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -129,10 +141,10 @@ Return ONLY valid JSON using the extract_items tool.`,
 
     const data = await response.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    
+
     if (!toolCall?.function?.arguments) {
       console.error("No tool call in response:", JSON.stringify(data));
-      return new Response(JSON.stringify({ error: "Could not extract items from receipt" }), {
+      return new Response(JSON.stringify({ error: "Could not extract items from receipt. Please try a clearer photo." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
