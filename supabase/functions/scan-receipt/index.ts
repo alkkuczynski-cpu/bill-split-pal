@@ -52,7 +52,8 @@ serve(async (req) => {
       throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
-    const { mediaType, base64Data } = normalizeImagePayload(imageBase64);
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const mediaType = imageBase64.includes('data:image/') ? imageBase64.split(';')[0].split(':')[1] : 'image/jpeg';
 
     console.log(`[scan-receipt:${requestId}] Normalized: mediaType=${mediaType}, base64Length=${base64Data.length}`);
 
