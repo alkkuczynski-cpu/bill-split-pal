@@ -1,17 +1,42 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Plus, X, Crown, Users } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 const SessionSetup = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const mode = searchParams.get("mode") || "bill";
   const isNight = mode === "night";
+  const { profile } = useAuth();
 
-  const [names, setNames] = useState<string[]>([""]);
+  // Get host display name from profile or guest host localStorage
+  const getHostName = (): string => {
+    if (profile?.display_name) return profile.display_name;
+    try {
+      const guest = localStorage.getItem("splitpal_guest_host");
+      if (guest) {
+        const parsed = JSON.parse(guest);
+        return parsed.display_name || "";
+      }
+    } catch {}
+    return "";
+  };
+
+  const hostName = getHostName();
+
+  const [names, setNames] = useState<string[]>([hostName || ""]);
   const [payerIndex, setPayerIndex] = useState<number>(0);
   const [newName, setNewName] = useState("");
+
+  // Update first name if profile loads after mount
+  useEffect(() => {
+    const name = getHostName();
+    if (name && !names[0]) {
+      setNames((prev) => [name, ...prev.slice(1)]);
+    }
+  }, [profile]);
 
   const addPerson = () => {
     if (newName.trim()) {
@@ -38,7 +63,6 @@ const SessionSetup = () => {
       name,
       isPayer: i === payerIndex,
     }));
-    // Store in sessionStorage for now, will use Supabase later
     sessionStorage.setItem(
       "splitpal_session",
       JSON.stringify({ mode, people })
@@ -60,9 +84,7 @@ const SessionSetup = () => {
           <h1 className="text-xl font-display font-bold text-foreground">
             {isNight ? "Night Out" : "Split a Bill"}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Who's at the table?
-          </p>
+          <p className="text-sm text-muted-foreground">Who's at the table?</p>
         </div>
       </div>
 
@@ -95,7 +117,7 @@ const SessionSetup = () => {
                   type="text"
                   value={name}
                   onChange={(e) => updateName(index, e.target.value)}
-                  placeholder={`Person ${index + 1}`}
+                  placeholder={index === 0 ? "Your name (payer)" : `Person ${index + 1}`}
                   className="flex-1 h-12 px-4 rounded-xl bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 {names.length > 1 && (

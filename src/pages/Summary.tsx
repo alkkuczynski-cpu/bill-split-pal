@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ArrowLeft, Check, Crown, ExternalLink, Share2,
+  ArrowLeft, Check, Crown, Share2, Send,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface Person {
   id: string;
@@ -55,6 +56,19 @@ const Summary = () => {
   const [loading, setLoading] = useState(true);
   const [revolutUsername, setRevolutUsername] = useState("");
 
+  // Also check guest host localStorage
+  const getRevolutUsername = (): string => {
+    if (revolutUsername) return revolutUsername;
+    if (profile?.revolut_username) return profile.revolut_username;
+    try {
+      const guest = localStorage.getItem("splitpal_guest_host");
+      if (guest) return JSON.parse(guest).revolut_username || "";
+    } catch {}
+    return "";
+  };
+
+  const hostRevolutUsername = getRevolutUsername();
+
   const parseSharedWith = (val: any): string[] => {
     if (Array.isArray(val)) return val;
     if (typeof val === "string") {
@@ -74,7 +88,6 @@ const Summary = () => {
         ]);
         if (sessionRes.data) {
           setTipAmount(sessionRes.data.tip_amount ?? 0);
-          // Fetch host's revolut username
           const hostUserId = (sessionRes.data as any).host_user_id;
           if (hostUserId) {
             const { data: hostProfile } = await supabase
@@ -85,7 +98,6 @@ const Summary = () => {
             if (hostProfile) setRevolutUsername((hostProfile as any).revolut_username || "");
           }
         }
-        // Use profile's revolut username as fallback
         if (profile?.revolut_username) setRevolutUsername((prev) => prev || profile.revolut_username);
         if (peopleRes.data) setPeople(peopleRes.data);
         if (itemsRes.data) setItems(itemsRes.data as Item[]);
@@ -96,7 +108,6 @@ const Summary = () => {
           })));
         }
       } else {
-        // Load from sessionStorage (host flow)
         const storedItems = sessionStorage.getItem("splitpal_items");
         const storedSession = sessionStorage.getItem("splitpal_session");
         const storedClaims = sessionStorage.getItem("splitpal_claims");
@@ -113,8 +124,6 @@ const Summary = () => {
     };
     loadData();
   }, [sessionId]);
-
-  // ─── Compute per-person totals & itemised breakdown ───
 
   const payer = useMemo(() => people.find((p) => p.is_payer), [people]);
 
@@ -138,7 +147,6 @@ const Summary = () => {
           });
         }
       } else {
-        // Accumulate per-person costs for this item
         const personCosts: Record<string, number> = {};
         itemClaims.forEach((c) => {
           if (!personCosts[c.person_id]) personCosts[c.person_id] = 0;
@@ -160,7 +168,6 @@ const Summary = () => {
       }
     });
 
-    // Tip distribution
     const activePeople = people.filter((p) => {
       const lines = result[p.id]?.itemLines ?? [];
       return lines.reduce((s, l) => s + l.amount, 0) > 0;
@@ -170,7 +177,6 @@ const Summary = () => {
       activePeople.forEach((p) => { result[p.id].tip = tipPer; });
     }
 
-    // Totals
     Object.keys(result).forEach((pid) => {
       const r = result[pid];
       r.total = r.itemLines.reduce((s, l) => s + l.amount, 0) + r.tip;
@@ -189,9 +195,24 @@ const Summary = () => {
       .reduce((s, p) => s + (personBreakdown[p.id]?.total ?? 0), 0);
   }, [people, payer, personBreakdown]);
 
-  // ─── Share ───
+  // Share personalised message for one person
+  const handleShareForPerson = async (person: Person) => {
+    const data = personBreakdown[person.id];
+    if (!data) return;
+    const amount = data.total.toFixed(2);
+    const revolutLink = hostRevolutUsername ? `revolut.me/${hostRevolutUsername}/${amount}` : "";
+    const message = `Hi ${person.name}! Here's your share from tonight 🧾\nYou owe €${amount}.${revolutLink ? `\nPay me here: ${revolutLink}` : ""}`;
 
-  const handleShare = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ text: message }); } catch { /* cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(message);
+      toast.success(`Payment message for ${person.name} copied!`);
+    }
+  };
+
+  // Share full summary
+  const handleShareAll = async () => {
     const lines = ["🧾 SplitPal — Here's who owes what:\n"];
     if (payer) {
       const payerData = personBreakdown[payer.id];
@@ -210,7 +231,7 @@ const Summary = () => {
       try { await navigator.share({ text }); } catch { /* cancelled */ }
     } else {
       await navigator.clipboard.writeText(text);
-      // could toast here
+      toast.success("Summary copied to clipboard!");
     }
   };
 
@@ -234,7 +255,7 @@ const Summary = () => {
       <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-lg border-b border-border px-4 py-4 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="w-10 h-10 rounded-xl bg-card flex items-center justify-center shadow-sm border border-border"
+          className="w-10 h-10 rounded-xl bg-card flex items-center justify-center shadow-sm border border-border active:scale-95 transition-transform"
         >
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
@@ -305,7 +326,6 @@ const Summary = () => {
           if (!data) return null;
           const pIndex = people.findIndex((p) => p.id === person.id);
           const color = AVATAR_COLORS[pIndex % AVATAR_COLORS.length];
-          const revolutLink = revolutUsername ? `https://revolut.me/${revolutUsername}/${data.total.toFixed(2)}` : null;
 
           return (
             <motion.div
@@ -347,18 +367,14 @@ const Summary = () => {
                 )}
               </div>
 
-              {/* Revolut button */}
-              {revolutLink && (
-                <a
-                  href={revolutLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
-                >
-                  Request €{data.total.toFixed(2)} on Revolut
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              )}
+              {/* Share payment request button */}
+              <button
+                onClick={() => handleShareForPerson(person)}
+                className="mt-4 w-full h-12 rounded-xl bg-[hsl(220,10%,13%)] text-white font-display font-semibold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+              >
+                <Send className="w-4 h-4" />
+                Send request to {person.name}
+              </button>
             </motion.div>
           );
         })}
@@ -395,13 +411,13 @@ const Summary = () => {
           </div>
         </motion.div>
 
-        {/* Share button */}
+        {/* Share all button */}
         <motion.button
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
           whileTap={{ scale: 0.98 }}
-          onClick={handleShare}
+          onClick={handleShareAll}
           className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-display font-semibold text-lg flex items-center justify-center gap-2"
         >
           <Share2 className="w-5 h-5" />
