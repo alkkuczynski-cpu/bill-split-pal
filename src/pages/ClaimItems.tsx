@@ -114,7 +114,6 @@ const ClaimItems = () => {
         setTipAmount(storedTip || 0);
         setLoading(false);
       } else {
-        toast.error("No session found");
         navigate("/");
       }
       return;
