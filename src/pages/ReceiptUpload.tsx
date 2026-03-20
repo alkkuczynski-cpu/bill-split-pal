@@ -109,17 +109,34 @@ const ReceiptUpload = () => {
     }, 10000);
 
     try {
-      console.log("[scan] Invoking scan-receipt edge function", {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      console.log("[scan] Supabase config", { supabaseUrl, keyPrefix: supabaseKey?.slice(0, 20) });
+      console.log("[scan] Invoking scan-receipt via direct fetch", {
         payloadLength: preview.length,
       });
 
-      const invokePromise = supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: preview },
+      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/scan-receipt`;
+      const fetchPromise = fetch(edgeFunctionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+          "apikey": supabaseKey,
+        },
+        body: JSON.stringify({ imageBase64: preview }),
+      }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          return { data: null, error: new Error(data.error || `HTTP ${res.status}`) };
+        }
+        return { data, error: null };
       });
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Receipt scanning timed out — please try again")), 90000)
       );
-      const { data: parsedData, error: fnError } = await Promise.race([invokePromise, timeoutPromise]) as any;
+      const { data: parsedData, error: fnError } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       const elapsedMs = Date.now() - scanStartedAt;
       console.log("[scan] Response received", { elapsedMs, parsedData, fnError });
