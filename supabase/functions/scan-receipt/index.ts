@@ -43,12 +43,25 @@ serve(async (req) => {
   console.log(`[scan-receipt:${requestId}] Request received`);
 
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    console.log(`[scan-receipt:${requestId}] Raw body length: ${rawBody.length}`);
+    
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body", rawLength: rawBody.length }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
     const imageBase64 = body?.imageBase64;
+    console.log(`[scan-receipt:${requestId}] imageBase64 length: ${imageBase64?.length ?? "missing"}`);
 
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return new Response(
-        JSON.stringify({ error: "No image provided" }),
+        JSON.stringify({ error: "No image provided", bodyKeys: Object.keys(body || {}), rawLength: rawBody.length }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
