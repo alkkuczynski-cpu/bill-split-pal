@@ -114,11 +114,16 @@ const Index = () => {
   };
 
   const handleAction = async (targetMode: string) => {
-    if (!isAuthenticated) {
+    // Check localStorage synchronously — this is the source of truth
+    const localProfile = readGuestHost();
+    const hasLocalProfile = localProfile?.display_name && localProfile?.revolut_username;
+    const hasAuthProfile = profile?.display_name && profile?.revolut_username;
+
+    if (!isAuthenticated && !hasLocalProfile) {
       await attemptGoogleSignIn();
       return;
     }
-    if (user && needsOnboarding) {
+    if (!hasLocalProfile && !hasAuthProfile) {
       navigate("/onboarding");
       return;
     }
