@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { User, ArrowRight, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { saveIdentity } from "@/lib/sessionIdentity";
 
 const GuestJoin = () => {
   const navigate = useNavigate();
