@@ -2,29 +2,33 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const dataUrlRegex = /^data:(image\/[a-z0-9.+-]+)(?:;[a-z0-9.+-]+=[^;,]+)*(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i;
-const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
-const model = "google/gemini-2.5-flash";
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION = "2023-06-01";
+const MODEL = "claude-haiku-4-5-20251001";
 
-const normalizeImagePayload = (input: string) => {
+const dataUrlRegex =
+  /^data:(image\/[a-z0-9.+-]+)(?:;[a-z0-9.+-]+=[^;,]+)*(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i;
+
+const normalizeImagePayload = (
+  input: string
+): { mediaType: string; base64Data: string } => {
   const trimmed = input.trim();
   const match = trimmed.match(dataUrlRegex);
 
   if (match) {
     return {
-      mimeType: match[1].toLowerCase(),
-      cleanBase64: match[2].replace(/\s/g, ""),
-      hadDataUrlPrefix: true,
+      mediaType: match[1].toLowerCase(),
+      base64Data: match[2].replace(/\s/g, ""),
     };
   }
 
   return {
-    mimeType: "image/jpeg",
-    cleanBase64: trimmed.replace(/\s/g, ""),
-    hadDataUrlPrefix: false,
+    mediaType: "image/jpeg",
+    base64Data: trimmed.replace(/\s/g, ""),
   };
 };
 
@@ -36,210 +40,147 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  console.log(`[scan-receipt:${requestId}] Request received`, {
-    method: req.method,
-    url: req.url,
-  });
+  console.log(`[scan-receipt:${requestId}] Request received`);
 
   try {
-    let body: { imageBase64?: string };
-    try {
-      body = await req.json();
-    } catch (parseError) {
-      console.error(`[scan-receipt:${requestId}] Failed to parse request JSON`, parseError);
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    const body = await req.json();
     const imageBase64 = body?.imageBase64;
+
     if (!imageBase64 || typeof imageBase64 !== "string") {
-      console.error(`[scan-receipt:${requestId}] Missing imageBase64 in request body`);
-      return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "No image provided" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log(`[scan-receipt:${requestId}] Image payload received`, {
-      imageLength: imageBase64.length,
-      prefixPreview: imageBase64.slice(0, 40),
-    });
+    console.log(`[scan-receipt:${requestId}] Image payload: ${imageBase64.length} chars`);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
-    const { mimeType, cleanBase64, hadDataUrlPrefix } = normalizeImagePayload(imageBase64);
+    const { mediaType, base64Data } = normalizeImagePayload(imageBase64);
 
-    console.log(`[scan-receipt:${requestId}] Image normalized`, {
-      mimeType,
-      hadDataUrlPrefix,
-      cleanLength: cleanBase64.length,
-    });
+    console.log(`[scan-receipt:${requestId}] Normalized: mediaType=${mediaType}, base64Length=${base64Data.length}`);
 
-    if (!cleanBase64 || cleanBase64.length < 100) {
-      console.error(`[scan-receipt:${requestId}] Image data too small after normalization`, {
-        cleanLength: cleanBase64.length,
-      });
-      return new Response(JSON.stringify({ error: `Image data is empty or too small (${cleanBase64.length} chars)` }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (base64Data.length < 100) {
+      return new Response(
+        JSON.stringify({ error: `Image data too small (${base64Data.length} chars)` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    if (!base64Regex.test(cleanBase64)) {
-      console.error(`[scan-receipt:${requestId}] Invalid base64 payload detected`);
-      return new Response(JSON.stringify({ error: "Invalid base64 image payload format" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    console.log(`[scan-receipt:${requestId}] Calling Anthropic API (${MODEL})...`);
 
-    const imageUrl = `data:${mimeType};base64,${cleanBase64}`;
-
-    console.log(`[scan-receipt:${requestId}] Sending request to AI gateway`, {
-      model,
-      elapsedMs: Date.now() - startedAt,
-    });
-
-    const gatewayResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(ANTHROPIC_API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": ANTHROPIC_VERSION,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model,
+        model: MODEL,
+        max_tokens: 1024,
         messages: [
-          {
-            role: "system",
-            content: `You are a receipt parser. Extract all line items from the receipt image.
-
-CRITICAL RULES FOR QUANTITY AND PRICE:
-- The "price" you return must be the UNIT price (price for ONE item), NOT the line total.
-- If a line shows "2x Guinness €11.80", that means 2 items at €5.90 each. Return quantity=2, price=5.90.
-- If a line shows "Burger €14.50", that means 1 item at €14.50. Return quantity=1, price=14.50.
-- Always verify: quantity × price = the line total shown on the receipt.
-- Cross-check that the sum of all (quantity × price) equals the receipt subtotal (before tip/tax).
-- If a line total doesn't divide evenly by quantity, return the line total as price with quantity=1 and set "mismatch" to true.
-
-Return ONLY valid JSON using the extract_items tool.`,
-          },
           {
             role: "user",
             content: [
               {
-                type: "image_url",
-                image_url: { url: imageUrl },
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mediaType,
+                  data: base64Data,
+                },
               },
               {
                 type: "text",
-                text: "Extract all line items and their prices from this receipt. For each item: if a quantity is shown (e.g. '2x'), divide the line total by the quantity to get the unit price. Use euro amounts. Verify that quantity × unit_price = line_total for every item.",
+                text: `Extract all line items from this receipt. Return ONLY a valid JSON object with this exact structure:
+{"items": [{"name": "Item Name", "price": 5.90, "quantity": 2, "mismatch": false}]}
+
+Rules:
+- "price" must be the UNIT price (for ONE item), not the line total.
+- If a line shows "2x Guinness €11.80", return quantity=2, price=5.90.
+- If quantity × price does not match the line total shown, set "mismatch" to true.
+- Use numeric values for price and quantity.
+- Return ONLY the JSON object, no other text.`,
               },
             ],
           },
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_items",
-              description: "Extract line items from a receipt",
-              parameters: {
-                type: "object",
-                properties: {
-                  items: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", description: "Item name" },
-                        price: { type: "number", description: "Price in euros" },
-                        quantity: { type: "number", description: "Quantity, default 1" },
-                        mismatch: { type: "boolean", description: "True if quantity × price does not match line total on receipt" },
-                      },
-                      required: ["name", "price"],
-                      additionalProperties: false,
-                    },
-                  },
-                },
-                required: ["items"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "extract_items" } },
       }),
     });
 
-    console.log(`[scan-receipt:${requestId}] AI gateway responded`, {
-      status: gatewayResponse.status,
-      ok: gatewayResponse.ok,
-      elapsedMs: Date.now() - startedAt,
-    });
+    const elapsed = Date.now() - startedAt;
+    console.log(`[scan-receipt:${requestId}] Anthropic responded: ${response.status} (${elapsed}ms)`);
 
-    if (!gatewayResponse.ok) {
-      const errText = await gatewayResponse.text();
-      console.error(`[scan-receipt:${requestId}] AI gateway error body`, errText);
-
-      const errorStatus = [400, 402, 429].includes(gatewayResponse.status) ? gatewayResponse.status : 500;
-      return new Response(JSON.stringify({
-        error: `AI gateway error (${gatewayResponse.status}): ${errText}`,
-      }), {
-        status: errorStatus,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[scan-receipt:${requestId}] Anthropic error:`, errText);
+      return new Response(
+        JSON.stringify({ error: `Anthropic API error (${response.status}): ${errText}` }),
+        {
+          status: response.status === 429 ? 429 : response.status === 401 ? 401 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
-    const gatewayData = await gatewayResponse.json();
-    const toolCall = gatewayData.choices?.[0]?.message?.tool_calls?.[0];
+    const data = await response.json();
+    const textContent = data.content?.find((c: any) => c.type === "text")?.text;
 
-    if (!toolCall?.function?.arguments) {
-      const rawGateway = JSON.stringify(gatewayData);
-      console.error(`[scan-receipt:${requestId}] Missing tool call arguments`, rawGateway);
-      return new Response(JSON.stringify({
-        error: `Missing tool call arguments in AI response: ${rawGateway}`,
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!textContent) {
+      console.error(`[scan-receipt:${requestId}] No text in response:`, JSON.stringify(data));
+      return new Response(
+        JSON.stringify({ error: "No text content in AI response" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    let parsed: { items?: Array<unknown> };
+    console.log(`[scan-receipt:${requestId}] Raw AI text:`, textContent);
+
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = textContent.match(/```(?:json)?\s*([\s\S]*?)```/) ||
+                      textContent.match(/(\{[\s\S]*\})/);
+
+    if (!jsonMatch) {
+      console.error(`[scan-receipt:${requestId}] Could not find JSON in response`);
+      return new Response(
+        JSON.stringify({ error: `Could not parse AI response: ${textContent}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let parsed: { items?: any[] };
     try {
-      parsed = JSON.parse(toolCall.function.arguments);
-    } catch (parseError) {
-      console.error(`[scan-receipt:${requestId}] Failed to parse tool arguments`, {
-        parseError,
-        rawArguments: toolCall.function.arguments,
-      });
-      return new Response(JSON.stringify({
-        error: `Invalid tool arguments JSON: ${toolCall.function.arguments}`,
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+    } catch (parseErr) {
+      console.error(`[scan-receipt:${requestId}] JSON parse failed:`, parseErr);
+      return new Response(
+        JSON.stringify({ error: `Invalid JSON from AI: ${jsonMatch[1] || jsonMatch[0]}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Normalize: if response is an array, wrap it
+    if (Array.isArray(parsed)) {
+      parsed = { items: parsed };
     }
 
     const itemCount = Array.isArray(parsed?.items) ? parsed.items.length : 0;
-    console.log(`[scan-receipt:${requestId}] Returning result to frontend`, {
-      itemCount,
-      elapsedMs: Date.now() - startedAt,
-    });
+    console.log(`[scan-receipt:${requestId}] Success: ${itemCount} items (${Date.now() - startedAt}ms)`);
 
     return new Response(JSON.stringify(parsed), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error(`[scan-receipt:${requestId}] Unhandled error`, e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error(`[scan-receipt:${requestId}] Unhandled error:`, e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
