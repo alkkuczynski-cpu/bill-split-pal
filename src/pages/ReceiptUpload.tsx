@@ -32,7 +32,7 @@ const ITEM_COLORS = [
   "hsl(0, 65%, 50%)",    // red
 ];
 
-const TEMP_SCAN_TIMEOUT_MS = 10_000;
+const SCAN_TIMEOUT_MS = 60_000;
 
 const formatRawError = (value: unknown): string => {
   if (value instanceof Error) return value.message;
