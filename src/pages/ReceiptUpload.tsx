@@ -80,26 +80,46 @@ const ReceiptUpload = () => {
     if (!preview) return;
     setIsProcessing(true);
     setScanStatus("Compressing image…");
+    setScanError(null);
+
+    // Set up 60-second timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000);
 
     try {
-      // Compress image before sending
-      const compressed = await compressImage(preview, 1200, 0.7);
+      // Compress, with fallback to original
+      let base64ToSend: string;
+      try {
+        base64ToSend = await compressImage(preview, 1200, 0.7);
+      } catch (compErr) {
+        console.warn("Compression failed, using original:", compErr);
+        base64ToSend = stripDataUrlPrefix(preview);
+      }
+
+      // Validate base64 before sending
+      if (!isValidBase64(base64ToSend)) {
+        console.warn("Invalid base64 after compression, falling back to original");
+        base64ToSend = stripDataUrlPrefix(preview);
+      }
+
       setScanStatus("Reading your receipt…");
 
       const { data, error } = await supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: compressed },
+        body: { imageBase64: base64ToSend },
       });
+
+      clearTimeout(timeoutId);
 
       if (error) {
         console.error("Scan error:", error);
-        toast.error("Failed to scan receipt. Please try again.");
+        setScanError("Failed to scan receipt. Please try again.");
         setIsProcessing(false);
         setScanStatus("");
         return;
       }
 
       if (data?.error) {
-        toast.error(data.error);
+        setScanError(data.error);
         setIsProcessing(false);
         setScanStatus("");
         return;
@@ -117,10 +137,16 @@ const ReceiptUpload = () => {
       }));
 
       setItems(extracted);
+      setScanError(null);
       toast.success(`Found ${extracted.length} items on the receipt`);
-    } catch (err) {
+    } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error("Scan error:", err);
-      toast.error("Something went wrong scanning the receipt.");
+      if (err?.name === "AbortError" || controller.signal.aborted) {
+        setScanError("Receipt scanning timed out — please try again.");
+      } else {
+        setScanError("Something went wrong scanning the receipt. Please try again.");
+      }
     } finally {
       setIsProcessing(false);
       setScanStatus("");
