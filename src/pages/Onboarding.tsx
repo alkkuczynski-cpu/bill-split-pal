@@ -37,8 +37,8 @@ const Onboarding = () => {
           { user_id: user.id, display_name: name, revolut_username: revolut } as any,
           { onConflict: "user_id" }
         )
-        .then(() => refreshProfile().catch(() => {}))
-        .catch(() => {});
+        .then(() => { refreshProfile().then(() => {}, () => {}); })
+        .then(() => {}, () => {});
     }
 
     // Navigate home after a brief confirmation
