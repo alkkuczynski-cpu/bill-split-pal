@@ -78,24 +78,33 @@ const ReceiptUpload = () => {
   const handleScan = async () => {
     if (!preview) return;
     setIsProcessing(true);
+    setScanStatus("Compressing image…");
 
     try {
+      // Compress image before sending
+      const compressed = await compressImage(preview, 1200, 0.7);
+      setScanStatus("Reading your receipt…");
+
       const { data, error } = await supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: preview },
+        body: { imageBase64: compressed },
       });
 
       if (error) {
         console.error("Scan error:", error);
         toast.error("Failed to scan receipt. Please try again.");
         setIsProcessing(false);
+        setScanStatus("");
         return;
       }
 
       if (data?.error) {
         toast.error(data.error);
         setIsProcessing(false);
+        setScanStatus("");
         return;
       }
+
+      setScanStatus("Organising items…");
 
       const extracted: LineItem[] = (data.items || []).map((item: any, i: number) => ({
         id: `item-${i}-${Date.now()}`,
@@ -113,6 +122,7 @@ const ReceiptUpload = () => {
       toast.error("Something went wrong scanning the receipt.");
     } finally {
       setIsProcessing(false);
+      setScanStatus("");
     }
   };
 
