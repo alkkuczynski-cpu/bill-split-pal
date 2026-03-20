@@ -76,11 +76,27 @@ const ReceiptUpload = () => {
 
   const handleFile = (file: File) => {
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPreview(e.target?.result as string);
+    // Convert any image format (AVIF, HEIC, WebP, etc.) to real JPEG via canvas
+    // so Anthropic receives a supported format
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      setPreview(jpegDataUrl);
+      URL.revokeObjectURL(img.src);
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      // Fallback: use raw data URI if canvas conversion fails
+      const reader = new FileReader();
+      reader.onload = (e) => setPreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
