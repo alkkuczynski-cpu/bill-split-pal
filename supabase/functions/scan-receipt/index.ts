@@ -5,48 +5,114 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const dataUrlRegex = /^data:(image\/[a-z0-9.+-]+)(?:;[a-z0-9.+-]+=[^;,]+)*(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i;
+const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+const model = "google/gemini-2.5-flash";
+
+const normalizeImagePayload = (input: string) => {
+  const trimmed = input.trim();
+  const match = trimmed.match(dataUrlRegex);
+
+  if (match) {
+    return {
+      mimeType: match[1].toLowerCase(),
+      cleanBase64: match[2].replace(/\s/g, ""),
+      hadDataUrlPrefix: true,
+    };
+  }
+
+  return {
+    mimeType: "image/jpeg",
+    cleanBase64: trimmed.replace(/\s/g, ""),
+    hadDataUrlPrefix: false,
+  };
+};
+
 serve(async (req) => {
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log(`[scan-receipt:${requestId}] Request received`, {
+    method: req.method,
+    url: req.url,
+  });
+
   try {
-    const { imageBase64 } = await req.json();
-    if (!imageBase64) {
+    let body: { imageBase64?: string };
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error(`[scan-receipt:${requestId}] Failed to parse request JSON`, parseError);
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const imageBase64 = body?.imageBase64;
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      console.error(`[scan-receipt:${requestId}] Missing imageBase64 in request body`);
       return new Response(JSON.stringify({ error: "No image provided" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log(`[scan-receipt:${requestId}] Image payload received`, {
+      imageLength: imageBase64.length,
+      prefixPreview: imageBase64.slice(0, 40),
+    });
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Clean the base64: strip any data URL prefix robustly
-    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "").trim();
+    const { mimeType, cleanBase64, hadDataUrlPrefix } = normalizeImagePayload(imageBase64);
+
+    console.log(`[scan-receipt:${requestId}] Image normalized`, {
+      mimeType,
+      hadDataUrlPrefix,
+      cleanLength: cleanBase64.length,
+    });
 
     if (!cleanBase64 || cleanBase64.length < 100) {
-      return new Response(JSON.stringify({ error: "Image data is empty or too small" }), {
+      console.error(`[scan-receipt:${requestId}] Image data too small after normalization`, {
+        cleanLength: cleanBase64.length,
+      });
+      return new Response(JSON.stringify({ error: `Image data is empty or too small (${cleanBase64.length} chars)` }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Always use image/jpeg since client compresses to JPEG
-    const imageUrl = `data:image/jpeg;base64,${cleanBase64}`;
+    if (!base64Regex.test(cleanBase64)) {
+      console.error(`[scan-receipt:${requestId}] Invalid base64 payload detected`);
+      return new Response(JSON.stringify({ error: "Invalid base64 image payload format" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    console.log(`Processing image: ${cleanBase64.length} base64 chars`);
+    const imageUrl = `data:${mimeType};base64,${cleanBase64}`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    console.log(`[scan-receipt:${requestId}] Sending request to AI gateway`, {
+      model,
+      elapsedMs: Date.now() - startedAt,
+    });
+
+    const gatewayResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model,
         messages: [
           {
             role: "system",
@@ -110,54 +176,67 @@ Return ONLY valid JSON using the extract_items tool.`,
       }),
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
+    console.log(`[scan-receipt:${requestId}] AI gateway responded`, {
+      status: gatewayResponse.status,
+      ok: gatewayResponse.ok,
+      elapsedMs: Date.now() - startedAt,
+    });
 
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited. Please try again in a moment." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add funds." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 400) {
-        return new Response(JSON.stringify({ error: "The image could not be processed. Please try a clearer photo." }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (!gatewayResponse.ok) {
+      const errText = await gatewayResponse.text();
+      console.error(`[scan-receipt:${requestId}] AI gateway error body`, errText);
 
-      return new Response(JSON.stringify({ error: "Failed to process receipt. Please try again." }), {
-        status: 500,
+      const errorStatus = [400, 402, 429].includes(gatewayResponse.status) ? gatewayResponse.status : 500;
+      return new Response(JSON.stringify({
+        error: `AI gateway error (${gatewayResponse.status}): ${errText}`,
+      }), {
+        status: errorStatus,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    const gatewayData = await gatewayResponse.json();
+    const toolCall = gatewayData.choices?.[0]?.message?.tool_calls?.[0];
 
     if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(data));
-      return new Response(JSON.stringify({ error: "Could not extract items from receipt. Please try a clearer photo." }), {
+      const rawGateway = JSON.stringify(gatewayData);
+      console.error(`[scan-receipt:${requestId}] Missing tool call arguments`, rawGateway);
+      return new Response(JSON.stringify({
+        error: `Missing tool call arguments in AI response: ${rawGateway}`,
+      }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const parsed = JSON.parse(toolCall.function.arguments);
+    let parsed: { items?: Array<unknown> };
+    try {
+      parsed = JSON.parse(toolCall.function.arguments);
+    } catch (parseError) {
+      console.error(`[scan-receipt:${requestId}] Failed to parse tool arguments`, {
+        parseError,
+        rawArguments: toolCall.function.arguments,
+      });
+      return new Response(JSON.stringify({
+        error: `Invalid tool arguments JSON: ${toolCall.function.arguments}`,
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const itemCount = Array.isArray(parsed?.items) ? parsed.items.length : 0;
+    console.log(`[scan-receipt:${requestId}] Returning result to frontend`, {
+      itemCount,
+      elapsedMs: Date.now() - startedAt,
+    });
 
     return new Response(JSON.stringify(parsed), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("scan-receipt error:", e);
+    console.error(`[scan-receipt:${requestId}] Unhandled error`, e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
