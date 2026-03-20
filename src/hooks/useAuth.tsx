@@ -95,6 +95,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    // Clear guest host data
+    try { localStorage.removeItem("splitpal_guest_host"); } catch {}
+    try { localStorage.removeItem("splitpal_identity"); } catch {}
   };
 
   return (
