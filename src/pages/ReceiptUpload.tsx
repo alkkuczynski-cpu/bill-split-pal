@@ -5,7 +5,7 @@ import { ArrowLeft, Camera, Image, Upload, Loader2, Pencil, Check, X, Plus, Tras
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { compressImage, stripDataUrlPrefix, isValidBase64 } from "@/lib/imageCompress";
+import { stripDataUrlPrefix } from "@/lib/imageCompress";
 import { saveIdentity } from "@/lib/sessionIdentity";
 import { safeStorage } from "@/lib/storage";
 
@@ -87,25 +87,11 @@ const ReceiptUpload = () => {
     const timeoutId = setTimeout(() => controller.abort(), 60_000);
 
     try {
-      // Compress, with fallback to original
-      let base64ToSend: string;
-      try {
-        base64ToSend = await compressImage(preview, 1200, 0.7);
-      } catch (compErr) {
-        console.warn("Compression failed, using original:", compErr);
-        base64ToSend = stripDataUrlPrefix(preview);
-      }
-
-      // Validate base64 before sending
-      if (!isValidBase64(base64ToSend)) {
-        console.warn("Invalid base64 after compression, falling back to original");
-        base64ToSend = stripDataUrlPrefix(preview);
-      }
-
+      // Send original image directly — no compression
       setScanStatus("Reading your receipt…");
 
       const { data, error } = await supabase.functions.invoke("scan-receipt", {
-        body: { imageBase64: base64ToSend },
+        body: { imageBase64: preview },
       });
 
       clearTimeout(timeoutId);
