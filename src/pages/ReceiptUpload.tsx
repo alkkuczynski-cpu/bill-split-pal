@@ -94,22 +94,11 @@ const ReceiptUpload = () => {
     }
 
     const scanStartedAt = Date.now();
-    console.groupCollapsed("[scan] Starting receipt scan");
-    console.log("[scan] Preview ready", {
-      previewLength: preview.length,
-      timeoutMs: SCAN_TIMEOUT_MS,
-      startedAt: new Date(scanStartedAt).toISOString(),
-    });
+    console.log("[scan] Starting receipt scan", { previewLength: preview.length });
 
     setIsProcessing(true);
     setScanStatus("Reading your receipt…");
     setScanError(null);
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      console.error(`[scan] Timeout reached (${SCAN_TIMEOUT_MS}ms). Aborting request now.`);
-      controller.abort();
-    }, SCAN_TIMEOUT_MS);
 
     try {
       console.log("[scan] Invoking scan-receipt edge function", {
@@ -153,21 +142,11 @@ const ReceiptUpload = () => {
     } catch (err: unknown) {
       const rawMessage = formatRawError(err);
       console.error("[scan] Scan failed", err);
-
-      if (controller.signal.aborted || (err as any)?.name === "AbortError") {
-        setScanError(`Receipt scanning timed out — please try again.\nRaw error: ${rawMessage || "AbortError"}`);
-      } else {
-        setScanError(`Raw error: ${rawMessage}`);
-      }
+      setScanError(`Raw error: ${rawMessage}`);
     } finally {
-      window.clearTimeout(timeoutId);
       setIsProcessing(false);
       setScanStatus("");
-      console.log("[scan] Scan flow finished", {
-        elapsedMs: Date.now() - scanStartedAt,
-        aborted: controller.signal.aborted,
-      });
-      console.groupEnd();
+      console.log("[scan] Scan flow finished", { elapsedMs: Date.now() - scanStartedAt });
     }
   };
 
