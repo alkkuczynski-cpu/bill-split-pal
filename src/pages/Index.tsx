@@ -10,6 +10,13 @@ import { toast } from "sonner";
 
 const AUTH_TIMEOUT_MS = 10_000;
 
+/** Read guest host profile from localStorage */
+const readGuestHost = () => {
+  const raw = safeStorage.getItem("splitpal_guest_host");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const { user, profile, loading, needsOnboarding, signOut } = useAuth();
@@ -22,20 +29,17 @@ const Index = () => {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Check for existing guest host
-  const guestHostStr = safeStorage.getItem("splitpal_guest_host");
-  const parsedGuestHost = guestHostStr ? (() => { try { return JSON.parse(guestHostStr); } catch { return null; } })() : null;
-
-  const isAuthenticated = !!user || !!parsedGuestHost;
-  const displayProfile = profile || parsedGuestHost;
+  // Re-read on each render so it picks up changes
+  const guestHost = readGuestHost();
+  const displayProfile = profile || guestHost;
+  const hasProfile = !!displayProfile;
+  const isAuthenticated = !!user || !!guestHost;
 
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
   }, []);
 
-  // Close menu on click outside
+  // Close menu on outside click
   useEffect(() => {
     if (!profileMenuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -50,7 +54,6 @@ const Index = () => {
   const attemptGoogleSignIn = async () => {
     setSigningIn(true);
     setAuthTimedOut(false);
-
     timeoutRef.current = setTimeout(() => {
       setAuthTimedOut(true);
       setSigningIn(false);
@@ -79,11 +82,13 @@ const Index = () => {
     const name = guestName.trim();
     const revolut = guestRevolut.trim().replace(/^@/, "");
     if (!name || !revolut) return;
-    const guestData = { display_name: name, revolut_username: revolut };
-    safeStorage.setItem("splitpal_guest_host", JSON.stringify(guestData));
+    safeStorage.setItem("splitpal_guest_host", JSON.stringify({ display_name: name, revolut_username: revolut }));
     setShowGuestFallback(false);
     setAuthTimedOut(false);
-    toast.success("Profile saved! You're all set.");
+    setProfileMenuOpen(false);
+    toast.success("Profile saved!");
+    // Force re-render by navigating to same page
+    navigate("/", { replace: true });
     window.location.reload();
   };
 
@@ -92,9 +97,9 @@ const Index = () => {
     await signOut();
     safeStorage.removeItem("splitpal_guest_host");
     clearIdentity();
-    // Clear session storage too
     sessionStorage.clear();
     toast.success("Signed out");
+    window.location.reload();
   };
 
   const handleEditProfile = () => {
@@ -102,9 +107,8 @@ const Index = () => {
     if (user) {
       navigate("/profile");
     } else {
-      // Guest host — open inline editor
-      setGuestName(parsedGuestHost?.display_name || "");
-      setGuestRevolut(parsedGuestHost?.revolut_username || "");
+      setGuestName(guestHost?.display_name || "");
+      setGuestRevolut(guestHost?.revolut_username || "");
       setShowGuestFallback(true);
     }
   };
@@ -121,56 +125,53 @@ const Index = () => {
     navigate(`/mode-select?mode=${targetMode}`);
   };
 
+  // Derive initials for the profile icon
+  const profileInitial = displayProfile?.display_name
+    ? displayProfile.display_name[0].toUpperCase()
+    : null;
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Profile menu */}
-      {isAuthenticated && displayProfile && (
+      {/* Profile menu — always show if we have any profile data */}
+      {hasProfile && (
         <div className="absolute top-6 right-6 z-30" ref={menuRef}>
           <button
             onClick={() => setProfileMenuOpen((p) => !p)}
             className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold shadow-md active:scale-95 transition-transform"
           >
-            {displayProfile.display_name ? displayProfile.display_name[0].toUpperCase() : <User className="w-5 h-5" />}
+            {profileInitial || <User className="w-5 h-5" />}
           </button>
 
-          <AnimatePresence>
-            {profileMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2 w-64 rounded-2xl bg-card border border-border shadow-lg overflow-hidden"
-              >
-                {/* User info */}
-                <div className="px-4 py-3 border-b border-border">
-                  <p className="font-display font-bold text-foreground text-sm truncate">
-                    {displayProfile.display_name}
+          {profileMenuOpen && (
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-card border border-border shadow-lg overflow-hidden z-40">
+              {/* User info */}
+              <div className="px-4 py-3 border-b border-border">
+                <p className="font-display font-bold text-foreground text-sm truncate">
+                  {displayProfile?.display_name || "User"}
+                </p>
+                {displayProfile?.revolut_username && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    @{displayProfile.revolut_username}
                   </p>
-                  {displayProfile.revolut_username && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      @{displayProfile.revolut_username}
-                    </p>
-                  )}
-                </div>
-                {/* Actions */}
-                <button
-                  onClick={handleEditProfile}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors active:bg-muted"
-                >
-                  <Pencil className="w-4 h-4 text-muted-foreground" />
-                  Edit profile
-                </button>
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/5 transition-colors active:bg-destructive/10 border-t border-border"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Sign out
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                )}
+              </div>
+              {/* Actions */}
+              <button
+                onClick={handleEditProfile}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors active:bg-muted"
+              >
+                <Pencil className="w-4 h-4 text-muted-foreground" />
+                Edit profile
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/5 transition-colors active:bg-destructive/10 border-t border-border"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -209,7 +210,7 @@ const Index = () => {
         )}
       </AnimatePresence>
 
-      {/* Auth timeout / error banner */}
+      {/* Auth timeout banner */}
       <AnimatePresence>
         {authTimedOut && !showGuestFallback && (
           <motion.div
